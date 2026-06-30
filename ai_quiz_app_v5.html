@@ -1645,8 +1645,7 @@
 <button id="math-kb-toggle" type="button" onclick="toggleMathKeyboard()">∑ 数式キーボード</button>
 <div id="math-keyboard">
   <div class="mk-head">
-    <span>数式キーボード — タブで切替（☐ は入力位置）</span>
-    <span style="display:flex; gap:8px; align-items:center;">
+    <span style="display:flex; gap:8px; align-items:center; margin-left:auto;">
       <button type="button" class="mk-close" onmousedown="event.preventDefault()" onclick="openTemplateBuilder()" style="border-color:var(--accent); color:var(--accent);">⊞ 数式テンプレート</button>
       <button type="button" class="mk-close" onclick="toggleMathKeyboard(false)">閉じる ✕</button>
     </span>
@@ -1667,7 +1666,7 @@
       </div>
       <button class="modal-close" onclick="closeBetaModal()">✕</button>
     </div>
-    <div style="padding:6px 2px; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;">
+    <div style="padding:8px 16px; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;">
       <div class="setting-row">
         <div style="flex:1;">
           <label style="text-transform:none; letter-spacing:0; margin-bottom:4px;">✏️ 自由描画＋AI採点（β）</label>
@@ -2701,14 +2700,12 @@ let activeMathInput = null;
 //           act='back'=1文字削除, wide=横2マス
 // タブ（カテゴリ）切り替え式。□ は挿入後にカーソルが入る空きスロットを表す。
 const MATH_TABS = {
+  // 構造（√・累乗・分数・括弧・絶対値…）→ 演算子 → 定数・記号 の順に整列。数字は常時表示の数字行、下付きは「下付き」タブへ。
   '基本': [
-    { l: '√☐', ins: '√()', caret: 2 }, { l: '☐²', ins: '²' }, { l: '☐³', ins: '³' }, { l: '☐ⁿ', ins: 'ⁿ' },
-    { l: '☐/☐', ins: '()/()', caret: 1 }, { l: '( )', ins: '()', caret: 1 }, { l: '‖☐‖', ins: '‖‖', caret: 1 }, { l: '|☐|', ins: '||', caret: 1 }, { l: '・', ins: '・' },
-    { l: '₀', ins: '₀' }, { l: '₁', ins: '₁' }, { l: '₂', ins: '₂' }, { l: '₃', ins: '₃' }, { l: '₄', ins: '₄' },
-    { l: '₅', ins: '₅' }, { l: '₆', ins: '₆' }, { l: '₇', ins: '₇' }, { l: '₈', ins: '₈' }, { l: '₉', ins: '₉' },
-    { l: '+', ins: '+' }, { l: '−', ins: '−' }, { l: '×', ins: '×' }, { l: '÷', ins: '÷' }, { l: '=', ins: '=' },
-    { l: 'π', ins: 'π' }, { l: 'θ', ins: 'θ' }, { l: '∞', ins: '∞' }, { l: '√', ins: '√' }, { l: '°', ins: '°' },
-    { l: '[☐]', ins: '[]', caret: 1 }, { l: ',', ins: ', ' }, { l: 'xᵀ', ins: 'ᵀ' }, { l: 'i', ins: 'i' }
+    { l: '√☐', ins: '√()', caret: 2 }, { l: '☐²', ins: '²' }, { l: '☐³', ins: '³' }, { l: '☐ⁿ', ins: 'ⁿ' }, { l: '☐/☐', ins: '()/()', caret: 1 }, { l: '( )', ins: '()', caret: 1 },
+    { l: '|☐|', ins: '||', caret: 1 }, { l: '‖☐‖', ins: '‖‖', caret: 1 }, { l: '[☐]', ins: '[]', caret: 1 }, { l: 'xᵀ', ins: 'ᵀ' },
+    { l: '+', ins: '+' }, { l: '−', ins: '−' }, { l: '×', ins: '×' }, { l: '÷', ins: '÷' }, { l: '=', ins: '=' }, { l: '±', ins: '±' }, { l: '・', ins: '・' }, { l: ',', ins: ', ' },
+    { l: 'π', ins: 'π' }, { l: 'e', ins: 'e' }, { l: 'θ', ins: 'θ' }, { l: '∞', ins: '∞' }, { l: '°', ins: '°' }, { l: '√', ins: '√' }, { l: 'i', ins: 'i' }
   ],
   '関係・演算': [
     { l: '=', ins: '=' }, { l: '≠', ins: '≠' }, { l: '<', ins: '<' }, { l: '>', ins: '>' }, { l: '≤', ins: '≤' },
@@ -2748,6 +2745,14 @@ const MATH_TABS = {
     { l: 'x⁵', ins: '⁵' }, { l: 'x⁶', ins: '⁶' }, { l: 'x⁷', ins: '⁷' }, { l: 'x⁸', ins: '⁸' }, { l: 'x⁹', ins: '⁹' },
     { l: 'ˣ⁺', ins: '⁺' }, { l: 'ˣ⁻', ins: '⁻' }, { l: 'ˣ⁽', ins: '⁽' }, { l: 'ˣ⁾', ins: '⁾' },
     { l: 'xⁿ', ins: 'ⁿ' }, { l: 'xⁱ', ins: 'ⁱ' }, { l: 'xˣ', ins: 'ˣ' }, { l: 'xᵀ', ins: 'ᵀ' }
+  ],
+  // 下付き専用（指数タブの対）。数字 → 演算子 → 英字 → よく使うギリシャ の順。
+  // ※Unicodeに下付き字形が無い文字（b・c・d・f・g・q・w・y・z 等）は出せない。採点は normalizeText で下付き→通常に畳む。
+  '下付き': [
+    { l: '₀', ins: '₀' }, { l: '₁', ins: '₁' }, { l: '₂', ins: '₂' }, { l: '₃', ins: '₃' }, { l: '₄', ins: '₄' }, { l: '₅', ins: '₅' }, { l: '₆', ins: '₆' }, { l: '₇', ins: '₇' }, { l: '₈', ins: '₈' }, { l: '₉', ins: '₉' },
+    { l: '₊', ins: '₊' }, { l: '₋', ins: '₋' }, { l: '₌', ins: '₌' }, { l: '₍', ins: '₍' }, { l: '₎', ins: '₎' },
+    { l: 'ₐ', ins: 'ₐ' }, { l: 'ₑ', ins: 'ₑ' }, { l: 'ₕ', ins: 'ₕ' }, { l: 'ᵢ', ins: 'ᵢ' }, { l: 'ⱼ', ins: 'ⱼ' }, { l: 'ₖ', ins: 'ₖ' }, { l: 'ₗ', ins: 'ₗ' }, { l: 'ₘ', ins: 'ₘ' }, { l: 'ₙ', ins: 'ₙ' }, { l: 'ₒ', ins: 'ₒ' }, { l: 'ₚ', ins: 'ₚ' }, { l: 'ᵣ', ins: 'ᵣ' }, { l: 'ₛ', ins: 'ₛ' }, { l: 'ₜ', ins: 'ₜ' }, { l: 'ᵤ', ins: 'ᵤ' }, { l: 'ᵥ', ins: 'ᵥ' }, { l: 'ₓ', ins: 'ₓ' },
+    { l: 'ᵦ', ins: 'ᵦ' }, { l: 'ᵧ', ins: 'ᵧ' }, { l: 'ᵨ', ins: 'ᵨ' }, { l: 'ᵩ', ins: 'ᵩ' }, { l: 'ᵪ', ins: 'ᵪ' }
   ]
 };
 let currentMathTab = '基本';
@@ -3585,8 +3590,10 @@ function submitOrderAnswer() {
 // strict=true（語学向け厳密採点）：大文字小文字・語間スペース・記号を区別する。
 // strict=false（既定・通常）：表記の揺れ（大小文字・空白・記号・順序）を吸収する。
 function normalizeText(s, strict) {
+  const SUB_MAP = { 'ₐ':'a','ₑ':'e','ₕ':'h','ᵢ':'i','ⱼ':'j','ₖ':'k','ₗ':'l','ₘ':'m','ₙ':'n','ₒ':'o','ₚ':'p','ᵣ':'r','ₛ':'s','ₜ':'t','ᵤ':'u','ᵥ':'v','ₓ':'x','₊':'+','₋':'-','₌':'=','₍':'(','₎':')','ᵦ':'β','ᵧ':'γ','ᵨ':'ρ','ᵩ':'φ','ᵪ':'χ' };
   let t = (s || '').toString().trim()
     .replace(/[₀-₉]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x2080 + 0x30)) // 下付き数字 ₀-₉ → 0-9
+    .replace(/[ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ₊₋₌₍₎ᵦᵧᵨᵩᵪ]/g, c => SUB_MAP[c]) // 下付き英字・演算子・ギリシャ → 通常文字
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)); // 全角英数 → 半角（入力法の差を吸収）
   if (strict) {
     // 大文字小文字・句読点はそのまま。空白の連続のみ1つに圧縮（前後trim済み）。
