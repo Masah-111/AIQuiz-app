@@ -1012,7 +1012,8 @@
 
     <div id="srs-banner" style="display:none; align-items:center; gap:10px; flex-wrap:wrap; background:var(--amber-bg); border:1px solid rgba(245,166,35,0.35); border-radius:var(--radius); padding:12px 14px;">
       <span id="srs-text" style="font-size:13px; flex:1; min-width:180px;"></span>
-      <button class="btn-primary" style="padding:8px 16px; background:var(--amber); color:#1a1206;" onclick="startSRSReview()">▶ 苦手を復習（無料）</button>
+      <button class="btn-primary" id="srs-review-btn" style="padding:8px 16px; background:var(--amber); color:#1a1206;" onclick="startSRSReview()">▶ 苦手を復習（無料）</button>
+      <button class="btn-secondary" id="srs-pdf-btn" style="padding:8px 14px;" onclick="printSRSNote()">苦手をPDF化</button>
       <button class="btn-secondary" style="padding:8px 14px;" onclick="clearSRS()">クリア</button>
     </div>
 
@@ -1061,7 +1062,7 @@
         </div>
         <div class="guide-info">
           <div class="gi-title">料金の目安</div>
-          <div class="gi-body">1回の生成で <code>claude-sonnet-4</code> を使用します。教材PDF＋数問の出題で <b>1回あたり おおよそ数円〜十数円</b>程度（PDFのページ数・問題数で変動）。<span class="imp">$5チャージしておけば、個人の勉強用途なら相当な回数使えます。</span></div>
+          <div class="gi-body">1回の生成で <code>claude-sonnet-5</code> を使用します。教材PDF＋数問の出題で <b>1回あたり おおよそ数円〜十数円</b>程度（PDFのページ数・問題数で変動）。<span class="imp">$5チャージしておけば、個人の勉強用途なら相当な回数使えます。</span></div>
         </div>
         <div class="guide-info">
           <div class="gi-title">支払い方法</div>
@@ -1071,6 +1072,11 @@
     </details>
 
     <div class="prompt-area" id="api-key-area">
+      <div id="api-key-head" style="display:none; align-items:center; justify-content:space-between; gap:10px;">
+        <span style="font-size:13px; color:#22c56b;">✓ APIキー設定済み（このブラウザに保存）</span>
+        <button type="button" class="btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="expandApiKey()">変更</button>
+      </div>
+      <div id="api-key-body">
       <label>APIキー（直接接続モード用）</label>
       <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-..."
         style="width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; font-family:inherit; outline:none;">
@@ -1083,6 +1089,7 @@
       </div>
       <div id="model-status" style="font-size:11px; margin-top:6px; line-height:1.5; color:var(--text3);"></div>
       <div id="file-proto-note" style="display:none; font-size:11px; color:var(--amber); margin-top:8px; line-height:1.6;"></div>
+      </div>
     </div>
 
     <div style="margin-top:2px;">
@@ -1118,11 +1125,6 @@
       <textarea id="material-text" placeholder="教科書・参考書・過去問の本文をここに貼り付けると、その内容から問題を作成します。"></textarea>
     </div>
 
-    <div class="prompt-area">
-      <label>追加指示（任意）</label>
-      <textarea id="extra-prompt" placeholder="例：「第3章の微分だけ出題して」「英語で出題して」「中学生向けにやさしく」など"></textarea>
-    </div>
-
     <div class="settings-grid">
       <div class="settings-card">
         <label>出題数</label>
@@ -1152,9 +1154,17 @@
       </div>
     </div>
 
+    <button class="btn-primary" id="start-btn" onclick="startQuiz()">
+      AIで問題を生成する
+    </button>
+
     <details class="guide-box">
-      <summary>詳細設定（選択肢の数・出題の重点・出題順序）</summary>
+      <summary>詳細設定（追加指示・選択肢の数・出題の重点・出題順序）</summary>
       <div class="guide-body">
+        <div class="prompt-area" style="margin-top:0;">
+          <label>追加指示（任意）</label>
+          <textarea id="extra-prompt" placeholder="例：「第3章の微分だけ出題して」「英語で出題して」「中学生向けにやさしく」など"></textarea>
+        </div>
         <div class="settings-grid" style="margin-bottom:0;">
           <div class="settings-card">
             <label>選択肢の数</label>
@@ -1185,8 +1195,9 @@
       </div>
     </details>
 
-    <div class="prompt-area">
-      <label style="margin-bottom:14px;">採点の設定</label>
+    <details class="guide-box">
+      <summary>採点の設定（別解判定・厳密さ）</summary>
+      <div class="guide-body">
       <div class="setting-row">
         <div>
           <label style="text-transform:none; letter-spacing:0; margin-bottom:4px;">AIによる別解判定（同値判定）</label>
@@ -1215,11 +1226,9 @@
           「厳密」にすると、穴埋め・表で<b>大文字小文字や語間スペースの違い</b>を不正解として検出します（綴り・大小文字を学ぶ語学向け）。数式・用語には「通常」「自動」が向きます。
         </div>
       </div>
-    </div>
+      </div>
+    </details>
 
-    <button class="btn-primary" id="start-btn" onclick="startQuiz()">
-      AIで問題を生成する
-    </button>
   </div>
 
   <!-- LOADING SCREEN -->
@@ -1356,6 +1365,16 @@
 
 </main>
 
+<!-- COST TOAST (生成コスト実測をアプリ内に表示。standalone/APIモードのみ) -->
+<div id="cost-toast" onclick="toggleCostToastDetail()"
+  style="position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%) translateY(20px); max-width:92vw; z-index:9998; background:var(--surface2,#fff); color:var(--text,#1f2937); border:1px solid var(--border2,#e5e7eb); border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,0.18); padding:10px 14px; font-size:13px; line-height:1.5; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; cursor:pointer;">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span id="cost-toast-main" style="font-weight:600;"></span>
+    <button type="button" onclick="hideCostToast(event)" aria-label="閉じる" style="margin-left:auto; background:none; border:none; color:var(--text3,#9ca3af); font-size:18px; cursor:pointer; line-height:1; padding:0 2px;">×</button>
+  </div>
+  <div id="cost-toast-detail" style="display:none; margin-top:6px; font-size:11px; color:var(--text2,#6b7280); word-break:break-all;"></div>
+</div>
+
 <!-- SOURCE MODAL (出典表示) -->
 <div class="modal-overlay" id="source-modal" onclick="if(event.target===this)closeSourceModal()">
   <div class="modal-box">
@@ -1414,7 +1433,7 @@
       <ul>
         <li>目安：1回の問題生成あたり、おおよそ数円〜十数円。教材のサイズ・ページ数・問題数により変動します。</li>
         <li>追加コスト：記述式の「AI採点」は1問ごとに追加のAI呼び出しが発生します。また穴埋め・表穴埋めで入力が正解と文字列一致しなかった場合、別解（同値）かどうかを確認するための追加のAI呼び出しが発生することがあります。図・表の実画像切り出しに伴う画像送信も料金に影響します。</li>
-        <li>使用モデル：既定は <code>claude-sonnet-4-6</code>。廃止された場合は現行モデルへ自動的に切り替わります。利用可能モデルの確認は無償の範囲で行われます。</li>
+        <li>使用モデル：既定は <code>claude-sonnet-5</code>。廃止された場合は現行モデルへ自動的に切り替わります。利用可能モデルの確認は無償の範囲で行われます。</li>
       </ul>
       <p>正確な料金・残高は、各自の <a href="https://console.anthropic.com/settings/billing" target="_blank">Anthropic Console（Billing）</a> でご確認ください。</p>
 
@@ -1940,7 +1959,7 @@ function setStartBtnBusy(busy) {
 }
 
 // ─── MODEL RESOLUTION (廃止モデルの自動追従) ────────────────────
-const PREFERRED_MODEL = 'claude-sonnet-4-6'; // 既定モデル。新モデルに乗り換えるときはここを変更
+const PREFERRED_MODEL = 'claude-sonnet-5'; // 既定モデル。新モデルに乗り換えるときはここを変更
 let activeModel = PREFERRED_MODEL;           // 実際に使うモデル（廃止時は自動で切り替わる）
 let modelChecked = false;                    // このセッションで確認済みか
 
@@ -2023,6 +2042,7 @@ async function testConnection() {
     });
     if (resp.ok) {
       setConnStatus('✓ 接続OK。このブラウザから問題を生成できます。', 'ok');
+      setTimeout(collapseApiKey, 1200); // 成功メッセージを少し見せてから入力欄を畳む
     } else {
       const err = await resp.json().catch(() => ({}));
       const m = (err.error && err.error.message) || ('HTTP ' + resp.status);
@@ -2174,6 +2194,17 @@ function buildSystemPrompt() {
     sp += `
 - 【β】"graph"タイプ（格子点プロット・自動採点）：学習者が座標グリッド上の【整数の格子点】をクリックして打点し、点の集合で答える問題。"grid"に表示範囲 {"xmin":-5,"xmax":5,"ymin":-5,"ymax":5}（すべて整数）を指定。"points"に【正解となる整数座標の配列】 [[x,y],...] を入れる（1個以上）。"mode"は順序を問わない場合"points"、折れ線/多角形として順序も見る場合"polyline"。採点は座標の完全一致で自動的に行うため、答えは必ず格子点（整数座標）で表せる問題にすること（例：指定3点を打つ、y=2x-1上の格子点を3つ打つ、(1,1)(3,1)(2,3)を結ぶ三角形を作る）。曲線そのものを描かせる問題には使わない。`;
   }
+
+  // A-2: 出力前の自己点検ステップ（ほぼ無料）。既存の歯止めを「出す直前に各問を必ず点検する」手順に落とし込む。
+  sp += `
+
+- 【出力前の自己点検（必須）】JSONを出力する【前】に、各問題について次を一問ずつ点検し、違反があれば必ず修正または作り直してから出力すること（点検の過程・思考は出力に含めない。最終的なJSONのみを返す）：
+  (1) 答えの露出（ネタバレ）：正解——fillの"blanks"/"accept"、choiceの正解選択肢、sortの正解カテゴリ、orderの正しい並び、tableの空欄セルの値、textの"keywords"/"model_answer"の要点——が、その問題の【問題文・選択肢・項目・添付する図(figure_svg/figure_ref)】に、語句としても式としてもそのまま出ていないか。出ていたら表現を変える／図を外す／その問題を作り直す。
+  (2) sort：各"items"に、自分の正解カテゴリ名（およびそれと一対一に対応する語）が混ざっていないか。混ざっていたら式・具体例・操作の説明に置き換える。
+  (3) choice：選択肢どうしが実質同一・重複していないか。正解だけが不自然に長い・詳しい／定型句が入る等の形式的な手掛かりが無いか。全選択肢が同程度の粒度・長さか。
+  (4) 教材忠実性：各問題の"source"（file/page/section/quote）が教材に【実在する記述】を指し、"quote"がその箇所と一致し、問題・正解がその根拠と矛盾しないか。教材外の推測で作らず、教材で確認できる内容だけを問う。
+  (5) 一意に解けるか：提示した情報だけで（答えを見ずに）論理的に【ただ一つの正解】へ到達できるか。到達できない・答えが割れる問題は作り直す。`;
+
   return sp;
 }
 
@@ -2232,7 +2263,7 @@ function parseQuestionJSON(text) {
     if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
   }
   if (!parsed) throw new Error('AIの返答が解析できませんでした。再度お試しください。');
-  return normalizeQuestions(parsed.questions);
+  return auditQuestions(normalizeQuestions(parsed.questions));
 }
 
 // ── ウィジェット（アーティファクト）モード：window.claude.complete を使用（テキストのみ）
@@ -2285,8 +2316,9 @@ async function generateQuestionsAPI(settings, similarTo) {
   }
 
   await resolveActiveModel(settings.apiKey); // 廃止モデルなら自動で現行へ追従
-  // 出力上限を出題数に応じて調整（無駄な上限＝コスト上振れを抑える）
-  const maxTokens = Math.min(8000, 1500 + (settings.qCount || 5) * 700);
+  // 出力上限：JSON本体（1500 + 問数×700）に加え、B の思考トークン用に余白（+8000）を確保する。
+  // 思考トークンは max_tokens を食うので、不足するとJSONが途中で切れて解析に失敗する。上限は24000。
+  const maxTokens = Math.min(24000, 1500 + (settings.qCount || 5) * 700 + 8000);
 
   let resp;
   try {
@@ -2301,7 +2333,17 @@ async function generateQuestionsAPI(settings, similarTo) {
       body: JSON.stringify({
         model: activeModel,
         max_tokens: maxTokens,
-        system: buildSystemPrompt(),
+        // B: adaptive thinking を有効化。教材を読む→出題範囲を計画→漏れ・ネタバレ・矛盾を
+        // 自己チェックしてからJSONを吐く。文脈忠実性・網羅・ネタバレ抑制に一番効く。
+        // effort:"low" で思考トークン（＝出力課金）を抑える。品質を見て medium に上げてよい。
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'low' },
+        // 思考＋生成で応答が長くなる（max_tokens 引き上げ）ため、非ストリーミングだと接続が
+        // タイムアウトで落ちうる。SSEストリーミングで受け取る。
+        stream: true,
+        // A-3: 大きなsystemプロンプトをキャッシュ（再生成・類似問題でsystem部が9割引に）。
+        // cache_control を付けるため文字列ではなく content ブロック配列で渡す。
+        system: [{ type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }]
       })
     });
@@ -2310,13 +2352,148 @@ async function generateQuestionsAPI(settings, similarTo) {
   }
 
   if (!resp.ok) {
+    // エラー時はSSEではなくJSONのエラーボディが返る
     const err = await resp.json().catch(() => ({}));
     throw new Error(err.error?.message || `APIエラー (${resp.status})`);
   }
 
-  const data = await resp.json();
-  const text = data.content.map(b => b.text || '').join('');
+  // SSEストリームから本文テキスト(text_delta)だけを結合する。思考ブロックは本文に含めない。
+  const text = await readAnthropicStream(resp);
   return parseQuestionJSON(text);
+}
+
+// Anthropic Messages API のSSEストリームを読み取り、本文テキスト(text_delta)を結合して返す。
+// 思考ブロック(thinking_delta / signature_delta)は本文に含めず、進捗表示にだけ使う。
+async function readAnthropicStream(resp) {
+  if (!resp.body || !resp.body.getReader) {
+    // 稀にストリームが使えない環境の保険：一括JSONとして読む
+    const data = await resp.json();
+    return (data.content || []).map(b => b.text || '').join('');
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', text = '', apiError = null, sawText = false;
+  // 実測トークン数（コスト把握用）。input_tokens は「非キャッシュの入力」のみ。
+  const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+
+  const handle = payload => {
+    let ev;
+    try { ev = JSON.parse(payload); } catch { return; }
+    if (ev.type === 'message_start' && ev.message && ev.message.usage) {
+      const u = ev.message.usage;
+      usage.input_tokens = u.input_tokens || 0;
+      usage.cache_creation_input_tokens = u.cache_creation_input_tokens || 0;
+      usage.cache_read_input_tokens = u.cache_read_input_tokens || 0;
+      usage.output_tokens = u.output_tokens || 0;
+    } else if (ev.type === 'content_block_start') {
+      if (ev.content_block && ev.content_block.type === 'thinking') {
+        setLoadingMsg('問題を生成中', 'AIが出題内容を吟味しています…');
+      }
+    } else if (ev.type === 'content_block_delta' && ev.delta) {
+      if (ev.delta.type === 'text_delta') {
+        if (!sawText) { sawText = true; setLoadingMsg('問題を生成中', '問題を書き出しています…'); }
+        text += ev.delta.text || '';
+      }
+      // thinking_delta / signature_delta は本文に含めない
+    } else if (ev.type === 'message_delta' && ev.usage) {
+      // 最終的な出力トークン数（思考＋本文の合計）はここに入る
+      if (typeof ev.usage.output_tokens === 'number') usage.output_tokens = ev.usage.output_tokens;
+    } else if (ev.type === 'error') {
+      apiError = (ev.error && ev.error.message) || 'ストリーム中にエラーが発生しました';
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    // \r を除去して \n\n 区切りに正規化（サーバ差異の保険）
+    buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '');
+    let idx;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const evChunk = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of evChunk.split('\n')) {
+        if (line.startsWith('data:')) handle(line.slice(5).trim());
+      }
+    }
+  }
+  if (apiError) throw new Error(apiError);
+  logGenerationCost(usage);
+  return text;
+}
+
+// 生成1回の実測トークンから概算コストを算出し、コンソールに出す（推定でなく実額を把握するため）。
+// 直近の値は window.__lastUsage にも保存する。
+function logGenerationCost(usage) {
+  // per 1M tokens（USD）：in=入力, out=出力, cw=キャッシュ書込, cr=キャッシュ読込
+  const PRICES = {
+    'claude-sonnet-4-6': { in: 3, out: 15, cw: 3.75, cr: 0.30 },
+    'claude-sonnet-5':   { in: 3, out: 15, cw: 3.75, cr: 0.30 },
+    'claude-opus-4-8':   { in: 5, out: 25, cw: 6.25, cr: 0.50 },
+    'claude-opus-4-7':   { in: 5, out: 25, cw: 6.25, cr: 0.50 },
+    'claude-haiku-4-5':  { in: 1, out: 5,  cw: 1.25, cr: 0.10 }
+  };
+  const model = (typeof activeModel !== 'undefined' && activeModel) || 'claude-sonnet-4-6';
+  let p = PRICES[model] || PRICES['claude-sonnet-4-6'];
+  // Sonnet 5 は 2026-08-31 まで導入価格（入力$2 / 出力$10）。以降は通常価格（$3/$15）に戻る。
+  if (model === 'claude-sonnet-5' && Date.now() < Date.parse('2026-09-01T00:00:00Z')) {
+    p = { in: 2, out: 10, cw: 2.5, cr: 0.20 };
+  }
+  const inTok = usage.input_tokens || 0;
+  const cwTok = usage.cache_creation_input_tokens || 0;
+  const crTok = usage.cache_read_input_tokens || 0;
+  const outTok = usage.output_tokens || 0;
+  const usd = (inTok * p.in + cwTok * p.cw + crTok * p.cr + outTok * p.out) / 1e6;
+  const jpy = usd * 155; // 円換算は概算レート
+  window.__lastUsage = {
+    model,
+    usage: { input_tokens: inTok, cache_creation_input_tokens: cwTok, cache_read_input_tokens: crTok, output_tokens: outTok },
+    usd, jpy
+  };
+  console.log(
+    `[AIQuiz] 生成コスト実測 (${model})\n` +
+    `  入力(非キャッシュ): ${inTok} tok\n` +
+    `  キャッシュ 書込:${cwTok} / 読込:${crTok} tok\n` +
+    `  出力(思考+JSON): ${outTok} tok\n` +
+    `  概算コスト: $${usd.toFixed(4)}  (≈¥${jpy.toFixed(1)})`
+  );
+  // アプリ内トーストにも表示（PC/スマホでコンソールを見なくても分かるように）。実データのみ。
+  if ((inTok + cwTok + crTok + outTok) > 0) { try { showCostToast(window.__lastUsage); } catch (e) {} }
+}
+
+// ── 生成コストのアプリ内トースト（standalone/APIモードのみ。logGenerationCost から呼ぶ）──
+let costToastTimer = null;
+function showCostToast(u) {
+  if (!u) return;
+  const el = document.getElementById('cost-toast');
+  if (!el) return;
+  const main = document.getElementById('cost-toast-main');
+  const detail = document.getElementById('cost-toast-detail');
+  const t = u.usage || {};
+  if (main) main.textContent = `💴 生成コスト ¥${u.jpy.toFixed(1)}（$${u.usd.toFixed(4)}・実測）　▸明細`;
+  if (detail) {
+    detail.textContent = `入力(非キャッシュ) ${t.input_tokens || 0} ／ キャッシュ 書込 ${t.cache_creation_input_tokens || 0}・読込 ${t.cache_read_input_tokens || 0} ／ 出力(思考+JSON) ${t.output_tokens || 0} tok　(${u.model})`;
+    detail.style.display = 'none';
+  }
+  el.style.opacity = '1';
+  el.style.transform = 'translateX(-50%) translateY(0)';
+  el.style.pointerEvents = 'auto';
+  clearTimeout(costToastTimer);
+  costToastTimer = setTimeout(hideCostToast, 12000); // 12秒で自動的に消す
+}
+function toggleCostToastDetail() {
+  const d = document.getElementById('cost-toast-detail');
+  if (d) d.style.display = (d.style.display === 'none') ? 'block' : 'none';
+  clearTimeout(costToastTimer); // 明細を開いたら自動消去を止める（じっくり読めるように）
+}
+function hideCostToast(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const el = document.getElementById('cost-toast');
+  if (!el) return;
+  el.style.opacity = '0';
+  el.style.transform = 'translateX(-50%) translateY(20px)';
+  el.style.pointerEvents = 'none';
+  clearTimeout(costToastTimer);
 }
 
 const QUESTION_TYPES = ['choice', 'sort', 'order', 'fill', 'table', 'text', 'draw', 'graph'];
@@ -2387,6 +2564,104 @@ function normalizeQuestions(qs) {
   });
   if (valid.length === 0) throw new Error('AIの返答が解析できませんでした。再度お試しください。');
   return valid;
+}
+
+// ── A-1: 決定論の後段チェック（無料・追加API呼び出しなし）───────────────
+// プロンプト任せの歯止め（ヒント漏れ防止・自己点検）に、機械的な「確定的な網」を足す。
+// 高確度で「答えの露出」「選択肢の破綻」だけを検出し、該当問だけ除外する（再生成はしない）。
+// 誤検出で良問を落としすぎないよう、しきい値は保守的に設定している。
+function normLeak(s) {
+  // 照合用に正規化：小文字化＋空白・区切り記号を除去（英字の大小や記号ゆれを無視）
+  return String(s == null ? '' : s).toLowerCase().replace(/[\s，、。．・,.　]/g, '');
+}
+// 問題文から「空欄記号」と「数式($...$)」を除いた地の文（ネタバレ照合の対象）
+function questionPlainText(q) {
+  return normLeak(String(q.question || '').replace(/[_＿]{3,}/g, ' ').replace(/\$[^$]*\$/g, ' '));
+}
+// 高確度のネタバレ・破綻のみ、理由文字列で返す（問題なければ null）
+function leakReason(q) {
+  try {
+    if (q.type === 'fill') {
+      const stem = questionPlainText(q);
+      for (const b of (q.blanks || [])) {
+        const ans = normLeak(b);
+        if (ans.length >= 2 && stem.includes(ans)) return `fill:答え「${b}」が問題文に露出`;
+      }
+    } else if (q.type === 'choice' && Array.isArray(q.choices)) {
+      const norm = q.choices.map(normLeak);
+      const ci = Number.isInteger(q.correct) ? q.correct : 0;
+      const correct = norm[ci];
+      // 選択肢の重複＝正解が一意に定まらない破綻
+      if (correct && norm.filter(c => c && c === correct).length > 1) return 'choice:選択肢が重複';
+      // 正解だけが問題文の地の文に出ていて、誤答は出ていない＝ネタバレ（誤検出を避けるため3字以上に限る）
+      if (correct && correct.length >= 3) {
+        const stem = questionPlainText(q);
+        const inStem = norm.map(c => c.length >= 3 && stem.includes(c));
+        if (inStem[ci] && inStem.filter(Boolean).length === 1) return `choice:正解「${q.choices[ci]}」が問題文に露出`;
+      }
+    } else if (q.type === 'sort' && Array.isArray(q.items)) {
+      // 各項目に、自分の正解カテゴリ名（2字以上）がそのまま入っている＝分類がバレる
+      for (let i = 0; i < q.items.length; i++) {
+        const cat = q.categories[q.answer[i]];
+        if (!cat) continue;
+        const c = normLeak(cat);
+        if (c.length >= 2 && normLeak(q.items[i]).includes(c)) return `sort:項目「${q.items[i]}」に正解カテゴリ「${cat}」が露出`;
+      }
+    }
+  } catch {}
+  return null;
+}
+// 構造整合の後段チェック（normalizeQuestions で担保しきれない破綻を拾う）。
+// choice の correct 範囲／fill の空欄数一致／sort の answer 長／table の blank 範囲は
+// normalizeQuestions が既に補正・除外済み。ここでは残る隙間だけを見る。
+function integrityReason(q) {
+  try {
+    if (q.type === 'sort') {
+      // answer の各値が実在カテゴリを指しているか（長さ一致は normalize 済み、範囲は未検証）
+      const nc = (q.categories || []).length;
+      for (const a of (q.answer || [])) {
+        if (!Number.isInteger(a) || a < 0 || a >= nc) return 'sort:正解カテゴリのインデックスが範囲外';
+      }
+    }
+  } catch {}
+  return null;
+}
+// 照合用に引用/教材を強く正規化（NFKC＋小文字＋空白・約物を除去）
+function normQuote(s) {
+  return String(s == null ? '' : s).normalize('NFKC').toLowerCase()
+    .replace(/\s+/g, '').replace(/[、。，．・,.\-—–―\/｜|「」『』（）()\[\]"'…:：;；!！?？]/g, '');
+}
+// テキスト教材がある場合のみ、source.quote が実際に教材内に存在するか照合する（無料・追加API無し）。
+// 一致しない引用は捏造の疑いだが、言い換え・数式・書式差での誤検出もあるため【除外せず】
+// q.quoteVerified に true/false/null を記録し、警告＋出典UI表示に使う（PDF/画像教材は materialText 空 → null）。
+function quoteAudit(qs) {
+  try {
+    const mat = (typeof storedSettings === 'object' && storedSettings && storedSettings.materialText) || '';
+    if (!String(mat).trim()) return; // テキスト教材なし＝照合不可（PDF/画像）
+    const normMat = normQuote(mat);
+    let unverified = 0;
+    for (const q of qs) {
+      const quote = q && q.source && q.source.quote;
+      if (typeof quote !== 'string') { if (q) q.quoteVerified = null; continue; }
+      const nq = normQuote(quote);
+      if (nq.length < 4) { q.quoteVerified = null; continue; } // 短すぎる引用は誤判定するので判定しない
+      const ok = normMat.includes(nq);
+      q.quoteVerified = ok;
+      if (!ok) unverified++;
+    }
+    if (unverified) console.warn(`[AIQuiz] 出典照合：${unverified}問の引用(source.quote)が教材テキスト内に見つかりません（捏造/言い換えの可能性・除外はしていません）。`);
+  } catch {}
+}
+// 破綻・ネタバレ問題を除外する。全問落ちる場合は「無いより有る」を優先し元の集合を返す（誤検出保険）。
+function auditQuestions(qs) {
+  const kept = [], dropped = [];
+  for (const q of qs) {
+    const reason = leakReason(q) || integrityReason(q);
+    if (reason) dropped.push(reason); else kept.push(q);
+  }
+  if (dropped.length) console.warn(`[AIQuiz] 決定論チェックで${dropped.length}問を除外:`, dropped);
+  quoteAudit(kept); // テキスト教材との出典照合（除外はせず q.quoteVerified に記録＋警告）
+  return kept.length ? kept : qs;
 }
 
 // SVGから危険な要素・属性を除去してから表示する
@@ -2648,9 +2923,11 @@ function mathToHtml(text) {
     out += escapeHtml(s.slice(last, m.index));
     const display = m[1] !== undefined;
     const tex = display ? m[1] : m[2];
-    // 中身に日本語（ひらがな・カタカナ・漢字）を含むものは数式ではなく通貨等の文章とみなし、
-    // そのまま表示する（例：「価格は$5と$10」を数式として描画してしまうのを防ぐ）。
-    if (/[぀-ヿ一-鿿]/.test(tex)) {
+    // 通貨等（例：「価格は$5と$10」）を数式描画してしまうのを防ぐ。ただし日本語の有無だけで
+    // 弾くと \frac{性能_X}{性能_Y} のような正当な式まで生表示になるため、LaTeX構造
+    // （\コマンド・波括弧・上下付き）を含まない日本語のみ通貨等とみなして生表示する。
+    const looksMath = /[\\{}]/.test(tex) || /[_^]\S/.test(tex);
+    if (/[぀-ヿ一-鿿]/.test(tex) && !looksMath) {
       out += escapeHtml(m[0]);
     } else {
       try { out += katex.renderToString(tex, { throwOnError: false, displayMode: display }); }
@@ -4188,7 +4465,9 @@ function finishAnswer(isCorrect) {
   setMath(document.getElementById('explanation-text'), q.explanation || '');
   const srcRow = document.getElementById('source-row');
   if (q.source) {
-    document.getElementById('source-text').textContent = formatSource(q.source);
+    let srcTxt = formatSource(q.source);
+    if (q.quoteVerified === false) srcTxt += '　⚠ 引用未確認（教材本文で確認できず）';
+    document.getElementById('source-text').textContent = srcTxt;
     srcRow.style.display = 'flex';
   } else {
     srcRow.style.display = 'none';
@@ -4435,15 +4714,77 @@ function saveSRS(arr) { try { localStorage.setItem(SRS_KEY, JSON.stringify(arr))
 function srsKey(q) { return normalizeText((q && q.question) || '') + '|' + ((q && q.type) || ''); }
 function srsDaysFromNow(d) { return Date.now() + d * 86400000; }
 
+// ── トピック正規化 ──────────────────────────────────────────────
+// 類似問題を再生成すると問題文が変わり srsKey が別物になる（＝同じ論点が別トラックに分裂）。
+// primaryキー(srsKey)は問題単位の同一性のため変えず、トピック単位の副インデックスを別に持つ。
+// 書式ゆれ（全角/半角・大小文字・空白・区切り記号）は吸収するが、同義語（微分法/導関数）は畳まない。
+function normalizeTopic(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s　]+/g, '')
+    .replace(/[・･,、.。\/\-‐―–—_'"「」（）()\[\]]/g, '')
+    .trim();
+}
+
+// ── 試験（科目名・試験日）ストア：カレンダー機能の土台。試験日クリップに使う ──
+// 設定UIはカレンダー機能側で用意する。ここではデータ層と、SRS側のクリップ配線のみ。
+const EXAMS_KEY = 'aiquiz_exams';
+function loadExams() {
+  try { const a = JSON.parse(localStorage.getItem(EXAMS_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+function saveExams(arr) { try { localStorage.setItem(EXAMS_KEY, JSON.stringify(arr)); } catch {} }
+// 試験を1件追加（name:科目/試験名, date:'YYYY-MM-DD'）
+function addExam(name, date) {
+  const arr = loadExams();
+  const e = { id: 'ex_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(name || ''), date: String(date || '') };
+  arr.push(e); saveExams(arr); return e;
+}
+// 未来で最も近い試験日の ms（その日の終わりまで有効）。試験が無ければ null。
+function nextExamMs() {
+  const now = Date.now();
+  let soonest = null;
+  for (const e of loadExams()) {
+    const t = Date.parse((e && e.date || '') + 'T23:59:59');
+    if (!isNaN(t) && t >= now && (soonest == null || t < soonest)) soonest = t;
+  }
+  return soonest;
+}
+// 次回復習日を「直近の試験日を超えない」ようにクリップ（試験5日前なのに16日後配置、を防ぐ）
+function clipDueToExam(due) {
+  const ex = nextExamMs();
+  return (ex != null && due > ex) ? ex : due;
+}
+
+// ── SRSをトピック単位で集約（カレンダーの「今日やるべきトピック」表示用）──
+function srsItemNT(it) { return (it && it.nt) || normalizeTopic(it && it.q && it.q.topic); }
+function srsByTopic() {
+  const now = Date.now();
+  const groups = {};
+  for (const it of loadSRS()) {
+    const nt = srsItemNT(it) || '(未分類)';
+    if (!groups[nt]) groups[nt] = { normTopic: nt, topic: (it.q && it.q.topic) || '(未分類)', items: [], due: Infinity, dueCount: 0, minBox: 99 };
+    const g = groups[nt];
+    g.items.push(it);
+    const d = it.due || 0;
+    if (d < g.due) g.due = d;
+    if (d <= now) g.dueCount++;
+    if ((it.box || 1) < g.minBox) g.minBox = it.box || 1;
+  }
+  return Object.values(groups).sort((a, b) => a.due - b.due);
+}
+
 // 不正解の問題を復習ボックスへ（既出なら box1 に戻す）
 function addWrongToSRS(q) {
   if (!q || !q.question) return;
   const arr = loadSRS();
   const key = srsKey(q);
+  const topic = (q.topic || '').toString();
+  const nt = normalizeTopic(topic);
   const ex = arr.find(it => it.key === key);
-  if (ex) { ex.box = 1; ex.due = Date.now(); ex.wrongCount = (ex.wrongCount || 0) + 1; ex.q = q; }
+  if (ex) { ex.box = 1; ex.due = Date.now(); ex.wrongCount = (ex.wrongCount || 0) + 1; ex.q = q; ex.topic = topic; ex.nt = nt; }
   else {
-    arr.push({ key, q, box: 1, due: Date.now(), wrongCount: 1, addedAt: Date.now() });
+    arr.push({ key, q, box: 1, due: Date.now(), wrongCount: 1, addedAt: Date.now(), topic, nt });
     while (arr.length > SRS_MAX) arr.shift();
   }
   saveSRS(arr);
@@ -4458,7 +4799,7 @@ function updateSRSAfterReview(qs, hist) {
     if (hist[i]) {
       const nb = arr[idx].box + 1;
       if (nb > 5) { arr.splice(idx, 1); return; } // 5回連続で正解＝卒業（ボックスから除外）
-      arr[idx].box = nb; arr[idx].due = srsDaysFromNow(SRS_INTERVALS[nb] || 1);
+      arr[idx].box = nb; arr[idx].due = clipDueToExam(srsDaysFromNow(SRS_INTERVALS[nb] || 1));
     } else {
       arr[idx].box = 1; arr[idx].due = Date.now(); arr[idx].wrongCount = (arr[idx].wrongCount || 0) + 1;
     }
@@ -4480,9 +4821,15 @@ function checkSRS() {
   if (!banner) return;
   const due = srsDueItems().length;
   const total = loadSRS().length;
-  if (due > 0) {
-    document.getElementById('srs-text').textContent =
-      `復習できる苦手問題が ${due} 問あります（登録 ${total} 問）。間違えた問題を後日また解いて定着させましょう。`;
+  const reviewBtn = document.getElementById('srs-review-btn');
+  const pdfBtn = document.getElementById('srs-pdf-btn');
+  // 苦手が1問でも登録されていればバナーを表示する（期限が来ていなくても「苦手をPDF化」は使える）。
+  if (total > 0) {
+    document.getElementById('srs-text').textContent = due > 0
+      ? `復習できる苦手問題が ${due} 問あります（登録 ${total} 問）。間違えた問題を後日また解いて定着させましょう。`
+      : `苦手問題を ${total} 問登録中（今日の復習期限はありません）。「苦手をPDF化」で見直せます。`;
+    if (reviewBtn) reviewBtn.style.display = due > 0 ? '' : 'none'; // 期限0なら復習ボタンは無反応なので隠す
+    if (pdfBtn) pdfBtn.style.display = '';
     banner.style.display = 'flex';
   } else {
     banner.style.display = 'none';
@@ -4787,15 +5134,16 @@ function discardResume() {
 // ─── PRINT / PDF (印刷・PDF保存) ───────────────────────────────
 // 現在の問題セットを「問題（ワークシート）＋解答キー」として印刷用に整形
 // includeAnswers=true で解答キーも印刷。false／未指定なら問題のみ（配布・自己テスト用）。
-function printQuestions(includeAnswers) {
-  if (!questions || !questions.length) { alert('印刷できる問題がありません。'); return; }
+function printQuestions(includeAnswers, qsArg, titleArg) {
+  const qs = (qsArg && qsArg.length) ? qsArg : questions; // サブセット（苦手ノート等）が渡されればそれを印刷
+  if (!qs || !qs.length) { alert('印刷できる問題がありません。'); return; }
   const area = document.getElementById('print-area');
   const m = s => mathToHtml(s); // 数式（$...$）を描画。KaTeX未読込なら生テキストにフォールバック
   const LBL = ['A', 'B', 'C', 'D', 'E', 'F'];
   const blankLines = n => '<div class="pl"></div>'.repeat(n);
 
   let body = '';
-  questions.forEach((q, i) => {
+  qs.forEach((q, i) => {
     let qhtml = '';
     if (q.type === 'choice') {
       qhtml = '<div class="pq-q">' + m(q.question) + '</div><ol class="pc">' +
@@ -4835,7 +5183,7 @@ function printQuestions(includeAnswers) {
   let key = '';
   if (includeAnswers) {
     key = '<div class="pk"><h2>解答</h2>';
-    questions.forEach((q, i) => {
+    qs.forEach((q, i) => {
       key += '<div class="pk-row"><b>問' + (i + 1) + '．</b>' + m(formatAnswerText(q)) +
         (q.explanation ? '<div class="pk-e">' + m(q.explanation) + '</div>' : '') + '</div>';
     });
@@ -4843,10 +5191,18 @@ function printQuestions(includeAnswers) {
   }
 
   const d = new Date(); const p = n => String(n).padStart(2, '0');
-  area.innerHTML = '<h1>AIクイズ 問題（全' + questions.length + '問）</h1>' +
+  area.innerHTML = '<h1>' + (titleArg || 'AIクイズ 問題') + '（全' + qs.length + '問）</h1>' +
     '<div class="pdate">作成：' + d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + '</div>' +
     body + key;
   window.print();
+}
+
+// 苦手ノート：SRSに溜まった苦手問題【全部】を、解答・解説つきでPDF化（印刷）する。
+function printSRSNote() {
+  const items = loadSRS();
+  if (!items.length) { alert('登録された苦手問題がありません。まず問題を解いて、間違えた問題をためましょう。'); return; }
+  const qs = JSON.parse(JSON.stringify(items.map(it => it.q))); // 保存データを壊さないよう複製
+  printQuestions(true, qs, 'AIクイズ 苦手ノート');
 }
 
 // ─── HISTORY & DASHBOARD (成績の永続化・学習履歴) ──────────────
@@ -4976,6 +5332,8 @@ function applyModeUI() {
     keyInput.addEventListener('input', () => {
       try { localStorage.setItem('aiquiz_api_key', keyInput.value.trim()); } catch {}
     });
+    // すでにキーが保存済みなら入力欄を畳んで「設定済み」表示にする（毎回入力させない）
+    if (keyInput.value) collapseApiKey();
   }
 
   // 保存した問題セット(JSON)の読み込み
@@ -5014,6 +5372,20 @@ function applyModeUI() {
   if (zoneP) zoneP.textContent = 'AIには送られません。「出典を見る」で開く用です';
   const pasteLabel = document.getElementById('paste-label');
   if (pasteLabel) pasteLabel.textContent = '教材テキスト（必須・コピペ）';
+}
+// APIキー入力欄を畳んで「✓設定済み」表示にする
+function collapseApiKey() {
+  const kh = document.getElementById('api-key-head');
+  const kb = document.getElementById('api-key-body');
+  if (kh && kb) { kb.style.display = 'none'; kh.style.display = 'flex'; }
+}
+// 「変更」クリックでAPIキー入力欄を開き直す
+function expandApiKey() {
+  const kh = document.getElementById('api-key-head');
+  const kb = document.getElementById('api-key-body');
+  if (kh && kb) { kh.style.display = 'none'; kb.style.display = ''; }
+  const inp = document.getElementById('api-key');
+  if (inp) inp.focus();
 }
 // ─── 折りたたみ項目（details）の開閉をなめらかにアニメーション ──
 function setupDetailsAnimation() {
