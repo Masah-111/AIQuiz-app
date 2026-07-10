@@ -711,6 +711,14 @@
   .order-move-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
   .order-move-btn:disabled { opacity: 0.3; cursor: default; }
   .order-answer-note { font-size: 12px; color: var(--text2); }
+  /* 並べ替えはブロック全体を掴んでドラッグ（▲▼ボタンは操作性の保険として残す）。↕は「掴める」目印（装飾・イベントは行が受ける） */
+  .order-drag { pointer-events: none; color: var(--text3); font-size: 17px; line-height: 1; padding: 0 6px 0 2px; user-select: none; flex-shrink: 0; }
+  .order-row.draggable, .exam-order-row.draggable { cursor: grab; touch-action: none; }
+  .order-row.draggable:active, .exam-order-row.draggable:active { cursor: grabbing; }
+  .order-row.dragging, .exam-order-row.dragging { opacity: 0.9; border-color: var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,0.16); }
+  /* 試験モードの並べ替え行（通常の.order-rowカードとは別スタイル。ドラッグ時だけ枠・影を出す） */
+  .exam-order-row { border: 1px solid transparent; border-radius: 8px; padding: 2px 4px; }
+  .exam-order-row.dragging { background: var(--surface2); }
 
   /* FILL (穴埋め) */
   .fill-sentence { font-size: 16px; line-height: 2.2; }
@@ -829,6 +837,9 @@
   .text-model { font-size: 13px; color: var(--text2); border-top: 1px dashed var(--border2); padding-top: 8px; line-height: 1.6; }
   .text-model strong { color: var(--text); }
   .quiz-submit-btn { margin-top: 14px; width: 100%; }
+  /* 記述の文字数カウンタ（「N文字以内」指定があれば上限も表示し、超過で赤） */
+  .char-counter { font-size: 12px; color: var(--text3); text-align: right; margin-top: 4px; font-family: 'Space Grotesk', 'Noto Sans JP', sans-serif; }
+  .char-counter.over { color: var(--red); font-weight: 600; }
   .mb-step { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text); font-size: 16px; cursor: pointer; line-height: 1; }
   .mb-step:hover { border-color: var(--accent); color: var(--accent); }
   .mb-cell:focus { border-color: var(--accent) !important; }
@@ -971,6 +982,7 @@
     <button class="notice-link" id="install-btn" onclick="addToHomeScreen()" title="このアプリのアイコンをホーム画面・デスクトップに追加">ホーム画面に追加する方法</button>
     <button class="notice-link" onclick="openHelpModal()">使い方</button>
     <button class="notice-link" onclick="openDashboard()">学習履歴</button>
+    <button class="notice-link" onclick="openDataModal()">データ管理</button>
     <button class="notice-link" onclick="openNoticeModal(false)">利用上の注意</button>
     <button class="notice-link" id="beta-btn" onclick="openBetaModal()" title="実験的なβ機能のオン/オフ">β機能</button>
     <div class="status-badge">AIで出題最適化</div>
@@ -1015,6 +1027,11 @@
       <button class="btn-primary" id="srs-review-btn" style="padding:8px 16px; background:var(--amber); color:#1a1206;" onclick="startSRSReview()">▶ 苦手を復習（無料）</button>
       <button class="btn-secondary" id="srs-pdf-btn" style="padding:8px 14px;" onclick="printSRSNote()">苦手をPDF化</button>
       <button class="btn-secondary" style="padding:8px 14px;" onclick="clearSRS()">クリア</button>
+    </div>
+
+    <div id="pool-banner" style="display:none; align-items:center; gap:10px; flex-wrap:wrap; background:var(--accent-glow); border:1px solid rgba(34,197,107,0.3); border-radius:var(--radius); padding:12px 14px;">
+      <span id="pool-banner-text" style="font-size:13px; flex:1; min-width:180px;"></span>
+      <button class="btn-primary" style="padding:8px 16px;" onclick="servePoolFromBanner()">▶ プールから出題（無料）</button>
     </div>
 
     <div class="upload-hero">
@@ -1105,6 +1122,14 @@
       </label>
     </div>
 
+    <details class="guide-box" id="pool-library" style="display:none;">
+      <summary>保存した問題プール（無料で出題）</summary>
+      <div class="guide-body">
+        <div style="font-size:12px; color:var(--text3); margin-bottom:8px; line-height:1.6;">大きめPDFから作成した問題プールです。APIを使わず何度でも無料で出題できます（毎回ちがう問題を出します）。プールごとに名前を付けて整理できます。</div>
+        <div id="pool-library-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+    </details>
+
     <div class="upload-zone" id="upload-zone">
       <input type="file" id="file-input" accept=".pdf,image/*" multiple>
       <div class="upload-icon">📚</div>
@@ -1131,11 +1156,10 @@
         <input type="number" id="q-count" value="5" min="1" max="20">
       </div>
       <div class="settings-card">
-        <label>初期難易度</label>
-        <select id="difficulty">
-          <option value="easy">やさしい</option>
-          <option value="medium" selected>普通</option>
-          <option value="hard">難しい</option>
+        <label>モード</label>
+        <select id="quiz-mode" onchange="onModeChange(this.value)">
+          <option value="normal" selected>通常モード</option>
+          <option value="exam">試験モード（制限時間・一括）</option>
         </select>
       </div>
       <div class="settings-card" style="grid-column: 1 / -1;">
@@ -1166,6 +1190,18 @@
           <textarea id="extra-prompt" placeholder="例：「第3章の微分だけ出題して」「英語で出題して」「中学生向けにやさしく」など"></textarea>
         </div>
         <div class="settings-grid" style="margin-bottom:0;">
+          <div class="settings-card">
+            <label>初期難易度</label>
+            <select id="difficulty">
+              <option value="easy">やさしい</option>
+              <option value="medium" selected>普通</option>
+              <option value="hard">難しい</option>
+            </select>
+          </div>
+          <div class="settings-card">
+            <label>制限時間（試験モード・分）</label>
+            <input type="number" id="exam-minutes" value="30" min="1" max="300">
+          </div>
           <div class="settings-card">
             <label>選択肢の数</label>
             <select id="choice-count">
@@ -1280,6 +1316,22 @@
     </div>
   </div>
 
+  <!-- EXAM SCREEN (試験モード：全問一括表示＋制限時間) -->
+  <div class="screen" id="screen-exam">
+    <div id="exam-bar" style="position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:var(--surface); border:1px solid var(--border2); border-radius:12px; padding:12px 14px; margin-bottom:6px;">
+      <div style="font-weight:600; font-size:14px;">試験モード ・ 全<span id="exam-total">0</span>問</div>
+      <div id="exam-timer" style="font-variant-numeric:tabular-nums; font-weight:700; font-size:20px; padding:2px 10px; border-radius:8px; background:var(--surface2);">--:--</div>
+      <div style="flex:1;"></div>
+      <button class="btn-secondary" style="padding:8px 14px;" onclick="quitExam()">中断</button>
+      <button class="btn-primary" style="padding:8px 16px;" onclick="submitExam(false)">採点する（提出）</button>
+    </div>
+    <div id="exam-note" style="font-size:12px; color:var(--text3); line-height:1.6; margin:4px 2px 0;">制限時間になると自動で採点されます。未回答は不正解になります。数式は回答欄をタップして右下の「∑」から数式キーボードで入力できます。（記述はAIが採点し、穴埋め・表の別解もAIが同値判定するため、採点に少し時間・費用がかかることがあります）</div>
+    <div id="exam-list"></div>
+    <div style="text-align:center; margin:8px 0 24px;">
+      <button class="btn-primary" style="padding:12px 28px;" onclick="submitExam(false)">採点する（提出）</button>
+    </div>
+  </div>
+
   <!-- RESULTS SCREEN -->
   <div class="screen" id="screen-results">
     <div class="result-hero">
@@ -1373,6 +1425,12 @@
     <button type="button" onclick="hideCostToast(event)" aria-label="閉じる" style="margin-left:auto; background:none; border:none; color:var(--text3,#9ca3af); font-size:18px; cursor:pointer; line-height:1; padding:0 2px;">×</button>
   </div>
   <div id="cost-toast-detail" style="display:none; margin-top:6px; font-size:11px; color:var(--text2,#6b7280); word-break:break-all;"></div>
+</div>
+
+<!-- POOL PROGRESS (問題プールをバックグラウンド作成中の進捗。学習を妨げないよう上部に小さく表示) -->
+<div id="pool-progress"
+  style="position:fixed; left:50%; top:calc(10px + env(safe-area-inset-top, 0px)); transform:translateX(-50%); max-width:92vw; z-index:9998; background:var(--surface2,#fff); color:var(--text,#1f2937); border:1px solid var(--border2,#e5e7eb); border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,0.18); padding:8px 14px; font-size:13px; line-height:1.5; opacity:0; pointer-events:none; transition:opacity .25s ease;">
+  <span id="pool-progress-text"></span>
 </div>
 
 <!-- SOURCE MODAL (出典表示) -->
@@ -1606,6 +1664,65 @@
   </div>
 </div>
 
+<!-- DATA MANAGEMENT HUB (データ管理ハブ：全データを1か所で管理＋バックアップ) -->
+<div class="modal-overlay" id="data-modal" onclick="if(event.target===this)closeDataModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">データ管理</div>
+        <div class="modal-sub">このアプリのデータを1か所でまとめて管理・バックアップできます。</div>
+      </div>
+      <button class="modal-close" onclick="closeDataModal()">✕</button>
+    </div>
+    <div class="notice-body" style="padding:18px 22px;">
+      <p class="notice-lead">保存データはすべて<b>このブラウザ内</b>にあります（PC・スマホ本体のフォルダには置けません）。別の端末・ブラウザへ移すときは、下の「全体バックアップ」を使ってください。</p>
+
+      <div class="notice-art" style="margin-top:0;">APIキー</div>
+      <p style="margin:0 0 8px;">状態：<b id="data-key-status">—</b></p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-secondary" style="padding:6px 12px; font-size:13px;" onclick="closeDataModal(); expandApiKey();">変更</button>
+        <button class="btn-secondary" style="padding:6px 12px; font-size:13px;" onclick="deleteApiKey()">削除</button>
+      </div>
+      <p style="font-size:11px; color:var(--text3); margin-top:6px;">※ 安全のため、APIキーはバックアップには含まれません。</p>
+
+      <div class="notice-art">保存した問題セット（JSON）</div>
+      <p style="margin:0 0 8px;">今のクイズ問題を1ファイルに書き出したり、保存したセットを読み込めます（キー不要で出題）。</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-secondary" id="data-export-set-btn" style="padding:6px 12px; font-size:13px;" onclick="exportQuestions()">現在の問題を書き出す</button>
+        <label class="btn-secondary" style="padding:6px 12px; font-size:13px; cursor:pointer;">問題セットを読み込む
+          <input type="file" accept=".json,application/json" style="display:none" onchange="if(this.files[0]){importQuestionsFile(this.files[0]); closeDataModal();} this.value='';">
+        </label>
+      </div>
+
+      <div class="notice-art">保存PDF（教材ファイル）</div>
+      <p id="data-pdf-status" style="margin:0;">—</p>
+      <p style="font-size:11px; color:var(--text3); margin-top:6px;">教材PDFは各「問題プール」内に一緒に保存され、再利用時に図・出典を表示します。個別の削除は下のプールの「削除」で行えます。</p>
+
+      <div class="notice-art">問題プール（無料で出題）</div>
+      <div id="data-pool-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+
+      <div class="notice-art">学習データ</div>
+      <p style="margin:0 0 8px;"><span id="data-learn-status">—</span></p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-secondary" style="padding:6px 12px; font-size:13px;" onclick="closeDataModal(); openDashboard();">学習履歴を見る</button>
+      </div>
+
+      <div class="notice-art">全体バックアップ（1ファイル・キー除外）</div>
+      <p style="margin:0 0 8px;">問題プール（PDF・図・出典込み）・学習履歴・苦手・試験・設定を<b>1つのファイル</b>に書き出し／復元します。別の端末やブラウザへの引っ越しに使えます。<b>APIキーは含まれません。</b></p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-primary" style="padding:8px 14px; font-size:13px;" onclick="exportBackup()">バックアップを書き出す</button>
+        <label class="btn-secondary" style="padding:8px 14px; font-size:13px; cursor:pointer;">バックアップから復元
+          <input type="file" accept=".json,application/json" style="display:none" onchange="if(this.files[0])importBackupFile(this.files[0]); this.value='';">
+        </label>
+      </div>
+      <p style="font-size:11px; color:var(--text3); margin-top:8px;" id="data-storage-status">—</p>
+    </div>
+    <div class="notice-foot">
+      <button class="btn-secondary" onclick="closeDataModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- AI同値判定の説明ポップアップ -->
 <div class="modal-overlay" id="aieq-modal" onclick="if(event.target===this)closeAiEqInfo()">
   <div class="modal-box" style="width:min(520px,100%);">
@@ -1790,9 +1907,9 @@ const SUPPORTED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'i
 const MAX_FILES = 3;
 
 function handleFiles(files) {
-  let rejected = [], overLimit = false;
+  let rejected = [], dup = [], overLimit = false;
   files.forEach(file => {
-    if (uploadedFiles.find(f => f.name === file.name)) return;
+    if (uploadedFiles.find(f => f.name === file.name)) { dup.push(file.name); return; }
     // ウィジェットモードでは出典表示用なので形式は問わない。直接API送信時のみ形式を確認する。
     if (!IS_WIDGET && !SUPPORTED_UPLOAD_TYPES.includes(file.type)) { rejected.push(file.name); return; }
     if (uploadedFiles.length >= MAX_FILES) { overLimit = true; return; }
@@ -1803,12 +1920,16 @@ function handleFiles(files) {
     msg += '次のファイルはAIに送れない形式のため除外しました：\n' + rejected.join('\n') +
       '\n\n対応形式は PDF・JPEG・PNG・GIF・WebP です。\niPhoneの写真（HEIC形式）は、JPEGで保存し直すか、スクリーンショットを撮ってからアップロードしてください。';
   }
+  if (dup.length) {
+    msg += (msg ? '\n\n' : '') + '同じ名前のファイルが追加済みのため除外しました：\n' + dup.join('\n');
+  }
   if (overLimit) {
     msg += (msg ? '\n\n' : '') + 'ファイルは最大' + MAX_FILES + 'つまでです。超過分は追加されませんでした。';
   }
   if (msg) alert(msg);
   clearFigureCaches();
   renderFileList();
+  refreshPoolUI(); // このファイルの無料プールがあればバナー表示（大きめPDFの再学習用）
 }
 
 function renderFileList() {
@@ -1822,7 +1943,7 @@ function renderFileList() {
     div.className = 'uploaded-file';
     div.innerHTML = `
       <div class="file-icon ${iconClass}">${icon}</div>
-      <div class="file-name">${file.name}</div>
+      <div class="file-name">${escapeHtml(file.name)}</div>
       <div class="file-size">${size}</div>
       <button class="remove-file" onclick="removeFile(${i})">✕</button>
     `;
@@ -1834,19 +1955,24 @@ function removeFile(i) {
   uploadedFiles.splice(i, 1);
   clearFigureCaches();
   renderFileList();
+  refreshPoolUI();
 }
 
 // ─── SCREEN CONTROL ────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  // 統計バーと数式キーボードはクイズ中だけ表示
+  // 統計バーはクイズ中のみ／数式キーボードはクイズ・試験中のみ表示
   if (id !== 'screen-quiz') {
     document.getElementById('global-stats-bar').classList.remove('visible');
+  }
+  if (id !== 'screen-quiz' && id !== 'screen-exam') {
     setMathToolsVisible(false);
   }
+  // 試験画面から離れたらタイマーを止める（別画面で自動採点が走らないように）
+  if (id !== 'screen-exam') { try { clearInterval(examTimer); } catch (e) {} }
   // アップロード画面に戻ったら、再開バナー・苦手復習バナーを更新
-  if (id === 'screen-upload') { checkResume(); checkSRS(); }
+  if (id === 'screen-upload') { checkResume(); checkSRS(); refreshPoolUI(); }
 }
 
 // ─── START QUIZ ────────────────────────────────────────────────
@@ -1871,9 +1997,17 @@ async function startQuiz() {
     answerFormat: document.getElementById('answer-format').value,
     materialText: materialText,
     apiKey: document.getElementById('api-key').value.trim(),
-    extra: document.getElementById('extra-prompt').value.trim()
+    extra: document.getElementById('extra-prompt').value.trim(),
+    mode: (document.getElementById('quiz-mode') || {}).value || 'normal',
+    examMinutes: parseInt((document.getElementById('exam-minutes') || {}).value) || 30
   };
   try { if (storedSettings.apiKey) localStorage.setItem('aiquiz_api_key', storedSettings.apiKey); } catch {}
+
+  // 既存プールがある／大きめPDF → プール方式（無料出題 or バックグラウンド作成）で処理し、通常生成を抜ける
+  if (!IS_WIDGET) {
+    try { if (await maybeHandlePoolFlow(storedSettings)) return; }
+    catch (e) { console.error(e); }
+  }
 
   if (!preGenerateGuard(storedSettings, { confirmCost: true })) return;
 
@@ -1895,9 +2029,7 @@ async function startQuiz() {
       questions.sort((a, b) => (diffOrder[a.difficulty] ?? 1) - (diffOrder[b.difficulty] ?? 1));
     }
     await persistResumeFiles(); // 再開時に図・出典を復元できるよう、元ファイルを一時保存
-    document.getElementById('global-stats-bar').classList.add('visible');
-    showQuizQuestion();
-    showScreen('screen-quiz');
+    enterQuiz(); // モード（通常/試験）に応じて出題を開始
   } catch(e) {
     console.error(e);
     alert('エラーが発生しました: ' + e.message);
@@ -1925,6 +2057,12 @@ function estimateCostLabel(mb, qn) {
 function preGenerateGuard(settings, opts) {
   opts = opts || {};
   if (isGenerating) return false; // 既に生成中なら無視（二重課金防止）
+  // 問題プールをバックグラウンド作成中は、別の有料生成を走らせない（同時課金・処理交錯の防止）。
+  // ※ プール作成自体の初回バッチは poolBuildActive を立てる前に本ガードを通るのでブロックされない。
+  if (poolBuildActive) {
+    alert('問題プールをバックグラウンドで作成中です。完成までお待ちください（進捗は画面上部に表示されます）。\n作成中のプールからは「無料で出題」も選べます。');
+    return false;
+  }
 
   if (!IS_WIDGET) {
     const totalBytes = uploadedFiles.reduce((s, f) => s + f.size, 0);
@@ -2088,9 +2226,9 @@ function fileToBase64(file) {
 
 // ─── AI QUESTION GENERATION ────────────────────────────────────
 // 出題生成の入口：実行環境に応じてウィジェット用／API用に振り分ける
-async function generateQuestions(settings, similarTo) {
+async function generateQuestions(settings, similarTo, filesArg, opts) {
   if (IS_WIDGET) return generateQuestionsWidget(settings, similarTo);
-  return generateQuestionsAPI(settings, similarTo);
+  return generateQuestionsAPI(settings, similarTo, filesArg, opts);
 }
 
 // システムプロンプト（両モード共通）
@@ -2171,7 +2309,7 @@ function buildSystemPrompt() {
 }
 
 ルール：
-- 【出題の質・ヒント漏れ防止】正解が、問題文・選択肢・項目の【表面的な言い回し】から推測できないようにすること。具体的には、(1) カテゴリ名・正解ラベルと同じ語（やそれと一対一に対応する語）を、その項目・選択肢の文面にそのまま書かない。(2) 正しい選択肢だけが極端に長い／詳しい、定型句が入る、等の形式的な手掛かりを作らない。(3) 学習者が内容を理解して初めて解けるよう、性質は式や中立的な表現で示す。例：カテゴリが「複素数の積／商」のとき、項目に『積になる』『商になる』と書くのは不可。『$|z_1 z_2| = |z_1||z_2|$』『偏角どうしを引いたものになる』のように、式や操作で示して『積/商』の語は避ける。(4) 【図にも答えを写さない】問題に添付する図（figure_svg／figure_ref）に、正解そのもの（答えとなる式・値・選択肢の内容や、それが書かれた表・公式・解答欄）を含めないこと。図は前提・状況の理解を助けるものに限る。問う対象の式・値が教材のその箇所に書かれている【想起・暗記系の問題】では、その箇所を切り出すと答えを見せてしまうため、図を付けない（または答えを含まない範囲だけを切り出す）こと。
+- 【出題の質・ヒント漏れ防止】正解が、問題文・選択肢・項目の【表面的な言い回し】から推測できないようにすること。具体的には、(1) カテゴリ名・正解ラベルと同じ語（やそれと一対一に対応する語）を、その項目・選択肢の文面にそのまま書かない。(2) 正しい選択肢だけが極端に長い／詳しい、定型句・括弧書きの注釈（「（原則）」「（例外）」等）が入る、等の形式的な手掛かりを作らない。全選択肢を同じ粒度・長さ・書式にそろえる（正解だけに補足や限定句を付けない）。(3) 学習者が内容を理解して初めて解けるよう、性質は式や中立的な表現で示す。例：カテゴリが「複素数の積／商」のとき、項目に『積になる』『商になる』と書くのは不可。『$|z_1 z_2| = |z_1||z_2|$』『偏角どうしを引いたものになる』のように、式や操作で示して『積/商』の語は避ける。(4) 【図にも答えを写さない】問題に添付する図（figure_svg／figure_ref）に、正解そのもの（答えとなる式・値・選択肢の内容や、それが書かれた表・公式・解答欄）を含めないこと。図は前提・状況の理解を助けるものに限る。問う対象の式・値が教材のその箇所に書かれている【想起・暗記系の問題】では、その箇所を切り出すと答えを見せてしまうため、図を付けない（または答えを含まない範囲だけを切り出す）こと。
 - "source"は全問必須。各問題が教材のどのファイル・ページ・章/節/問題番号を根拠にしているかを正確に示すこと。"file"はユーザーが提示するファイル番号（0始まり）、"page"はPDFのページ番号（画像の場合は1）。
 - "figure_svg"は図・グラフ・表・模式図が問題の理解に役立つ場合のみ含める（不要なら省略）。viewBox属性付きのSVGとすること。表示は【白い背景】なので、線・文字は濃い色（基本は #1f2937。強調・正解の補助線・重要点はアクセント色 #22c56b、補助的な要素は #4aa8ff）にし、塗りは白または淡い半透明色（例 rgba(34,197,107,0.1)）にすること。【薄いグレーや白に近い色は背景に溶けて見えないため使わない】。背景色は指定しない（透明のまま）。scriptや外部画像参照は禁止。特に幾何・図形問題（三角形・円・角度・座標平面・ベクトル・関数のグラフなど）では、理解を助けるため figure_svg を積極的に使うこと（教材に実物の図がある場合は後述の figure_ref を優先）。
 - "figure_ref"（任意・推奨）：問題が教材内に【実際に存在する図・表・グラフ・写真・地図など】に関するものなら、その領域を切り出して原本画像を表示できるよう付けること。形式は {"file":ファイル番号(0始まり),"page":ページ番号(画像は1),"bbox":[x0,y0,x1,y1]}。bboxはそのページの左上を原点とし、x0,y0=領域の左上角、x1,y1=右下角を、ページ幅・高さに対する0.0〜1.0の割合で示す（例 [0.1,0.2,0.6,0.5]）。図のキャプションや見出しも少し含むように、やや広めに囲うこと。教材に実物がある図表は、描き起こしの"figure_svg"よりも"figure_ref"を優先する。実物が無い概念図のみ"figure_svg"を使う。【ただし上記「ヒント漏れ防止(4)」を厳守】：問う対象の式・値・答えがその領域に書かれている場合は、答えを見せてしまうので figure_ref を付けない（公式表や解答欄を切り出さない）。
@@ -2183,6 +2321,8 @@ function buildSystemPrompt() {
 - "table"タイプは表（簿記の精算表・試算表、集計表、対応表など）の穴埋め。教材内に表がある場合に特に有効。"rows"には【すべてのセルを正しく埋めた状態】の表データを2次元配列で入れること（各行は同じ列数）。"headers"（任意）は列見出しの配列。"blanks"は空欄にするセルの位置 {"r":行番号,"c":列番号}（いずれも0始まり）の配列で、1個以上。各blankに"accept"（別解の配列）を付けることを強く推奨し、正解と同じ意味になる言い換え・同義語・別表記を【各空欄につき最大5個まで】列挙すること。空欄の正解は"rows"の該当セルの値が使われる。数値は文字列で入れること。
 - 数式・記号の表示：問題文("question")・選択肢("choices")・解説("explanation")・模範解答("model_answer")・表の見出し("headers")・表の【空欄でない】セルなど、表示用テキストでは、行列・分数・根号・総和・上下付き文字などの数式は LaTeX で書き、前後を「$」で囲むこと（インラインは $...$、独立行は $$...$$）。例：「積は $c_{ij}=\\sum_{k=1}^{m} a_{ik}b_{kj}$ で表される」「$\\sqrt{x_1^2+y_1^2}$」「ノルム $\\|a\\|$」「行列 $\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}$」。バックスラッシュはJSON内で必ず \\\\ とエスケープすること。
 - ただし【利用者が入力して採点される値】＝fillの"blanks"と"accept"、tableで空欄にするセル（"blanks"が指す"rows"上の値）は、$ で囲まず、キーボードで打てる素のテキストで書くこと（例：x₁、x₁x₂+y₁y₂、√(x₁²+y₁²)、‖a‖、a・b=0）。これらにLaTeXコマンドや「$」を使ってはならない。
+- 【回答値は「核心の答え」だけにする＝注釈を付けない（最重要）】採点対象になる値——choiceの各選択肢の文言、fillの"blanks"／"accept"、tableで空欄にするセルの正解値——には、「（原則）」「（例外）」「（一身専属権）」のような注釈・限定句・根拠・補足を、括弧書き等で付けないこと。値は簡潔な核心の答えのみとする（例：誤「著作者の死後70年（原則）」→正「著作者の死後70年」／誤「不可（一身専属権）」→正「不可」）。原則・例外・根拠・条件などの補足は必ず"explanation"に書く。理由：(a) 選択肢では正解だけに注釈が付くと正解が透ける、(b) 穴埋め・表では学習者が素直に書いた答えが注釈の有無で不正解になる。
+- 【accept を厚くする】fill／tableの"accept"には、語尾・助詞・送り仮名・言い回しの違い（例：「70年」「死後70年」「70年間」、「〜まで」「〜間」の有無、「不可」「できない」）や、数値だけ・単位付きなど、同義になり得る素直な別表記を可能な範囲で列挙すること（各空欄・各セル最大5個・簡潔な語句）。学習者が核心を正しく書けていれば、末尾表現の違いで不正解にしない方針。
 - 各タイプの必須フィールドを守ること。figure_svgはtext以外で任意。`;
 
   // β機能：有効なときだけ、対応タイプの仕様をプロンプトに追加する
@@ -2201,7 +2341,8 @@ function buildSystemPrompt() {
 - 【出力前の自己点検（必須）】JSONを出力する【前】に、各問題について次を一問ずつ点検し、違反があれば必ず修正または作り直してから出力すること（点検の過程・思考は出力に含めない。最終的なJSONのみを返す）：
   (1) 答えの露出（ネタバレ）：正解——fillの"blanks"/"accept"、choiceの正解選択肢、sortの正解カテゴリ、orderの正しい並び、tableの空欄セルの値、textの"keywords"/"model_answer"の要点——が、その問題の【問題文・選択肢・項目・添付する図(figure_svg/figure_ref)】に、語句としても式としてもそのまま出ていないか。出ていたら表現を変える／図を外す／その問題を作り直す。
   (2) sort：各"items"に、自分の正解カテゴリ名（およびそれと一対一に対応する語）が混ざっていないか。混ざっていたら式・具体例・操作の説明に置き換える。
-  (3) choice：選択肢どうしが実質同一・重複していないか。正解だけが不自然に長い・詳しい／定型句が入る等の形式的な手掛かりが無いか。全選択肢が同程度の粒度・長さか。
+  (3) choice：選択肢どうしが実質同一・重複していないか。正解だけが不自然に長い・詳しい／定型句・括弧書きの注釈（「（原則）」等）が入る等の形式的な手掛かりが無いか。全選択肢が同程度の粒度・長さ・書式か。
+  (3b) 回答値のクリーンさ：choiceの選択肢・fillの"blanks"/"accept"・tableの空欄セルの正解値に、「（原則）」「（例外）」「（一身専属権）」等の注釈・限定句・根拠が括弧書き等で付いていないか。付いていたら核心の答えだけに直し、補足は"explanation"へ移す。あわせて、素直な別表記（語尾・助詞・単位の違い等）を"accept"に補えているか確認する。
   (4) 教材忠実性：各問題の"source"（file/page/section/quote）が教材に【実在する記述】を指し、"quote"がその箇所と一致し、問題・正解がその根拠と矛盾しないか。教材外の推測で作らず、教材で確認できる内容だけを問う。
   (5) 一意に解けるか：提示した情報だけで（答えを見ずに）論理的に【ただ一つの正解】へ到達できるか。到達できない・答えが割れる問題は作り直す。`;
 
@@ -2289,8 +2430,9 @@ ${settings.materialText || ''}
 }
 
 // ── 単体HTML（standalone）モード：Anthropic API を直接呼び出し（画像・PDF対応）
-async function generateQuestionsAPI(settings, similarTo) {
-  const fileContents = await readFiles(uploadedFiles);
+async function generateQuestionsAPI(settings, similarTo, filesArg, opts) {
+  opts = opts || {};
+  const fileContents = await readFiles(filesArg || uploadedFiles);
   const userContent = [];
 
   for (const f of fileContents) {
@@ -2311,6 +2453,13 @@ async function generateQuestionsAPI(settings, similarTo) {
 
   userContent.push({ type: 'text', text: buildInstruction(settings, similarTo, sourceDesc) });
 
+  // プール作成など連続生成時は、教材（system＋PDF/画像）をプロンプトキャッシュして
+  // 2回目以降の入力課金を約1/10に抑える。可変の指示テキストの前（＝最後のファイルブロック）に
+  // キャッシュ境界を置く。単発生成では付けない（1回だけだとキャッシュ書込分だけ割高になるため）。
+  if (opts.cachePdf && fileContents.length) {
+    userContent[fileContents.length - 1].cache_control = { type: 'ephemeral' };
+  }
+
   if (!settings.apiKey) {
     throw new Error('この環境ではアーティファクト内蔵AIが使えないため、Anthropic APIキーが必要です。アップロード画面の「APIキー」欄に入力してください（sk-ant-… で始まるキー）。');
   }
@@ -2320,41 +2469,53 @@ async function generateQuestionsAPI(settings, similarTo) {
   // 思考トークンは max_tokens を食うので、不足するとJSONが途中で切れて解析に失敗する。上限は24000。
   const maxTokens = Math.min(24000, 1500 + (settings.qCount || 5) * 700 + 8000);
 
-  let resp;
-  try {
-    resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': settings.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: activeModel,
-        max_tokens: maxTokens,
-        // B: adaptive thinking を有効化。教材を読む→出題範囲を計画→漏れ・ネタバレ・矛盾を
-        // 自己チェックしてからJSONを吐く。文脈忠実性・網羅・ネタバレ抑制に一番効く。
-        // effort:"low" で思考トークン（＝出力課金）を抑える。品質を見て medium に上げてよい。
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'low' },
-        // 思考＋生成で応答が長くなる（max_tokens 引き上げ）ため、非ストリーミングだと接続が
-        // タイムアウトで落ちうる。SSEストリーミングで受け取る。
-        stream: true,
-        // A-3: 大きなsystemプロンプトをキャッシュ（再生成・類似問題でsystem部が9割引に）。
-        // cache_control を付けるため文字列ではなく content ブロック配列で渡す。
-        system: [{ type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: userContent }]
-      })
-    });
-  } catch (e) {
-    throw new Error('APIに接続できませんでした（' + (e && e.message ? e.message : e) + '）。\n・claude.aiのアーティファクト枠内では外部通信が遮断されます。\n・ファイルを直接(file://)開いた場合も、ブラウザによっては遮断されます。\nアップロード画面の「接続テスト」で確認するか、簡易ローカルサーバー経由で開いてください。');
-  }
+  const reqInit = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': settings.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: activeModel,
+      max_tokens: maxTokens,
+      // B: adaptive thinking を有効化。教材を読む→出題範囲を計画→漏れ・ネタバレ・矛盾を
+      // 自己チェックしてからJSONを吐く。effort:"low" で思考トークン（＝出力課金）を抑える。
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'low' },
+      // 思考＋生成で応答が長くなるため、非ストリーミングだと接続がタイムアウトしうる。SSEで受け取る。
+      stream: true,
+      // 大きなsystemプロンプトをキャッシュ（再生成・類似問題・プール作成でsystem部が9割引に）。
+      system: [{ type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: userContent }]
+    })
+  };
 
-  if (!resp.ok) {
+  // 429（レート制限）・5xx（過負荷・一時エラー）は指数バックオフで数回リトライする。
+  // 4xx（キー不正など）は即エラー。リトライはストリーム開始前の応答にのみ適用（本文途中の切断は対象外）。
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const MAX_RETRY = 3;
+  let resp;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      resp = await fetch('https://api.anthropic.com/v1/messages', reqInit);
+    } catch (e) {
+      throw new Error('APIに接続できませんでした（' + (e && e.message ? e.message : e) + '）。\n・claude.aiのアーティファクト枠内では外部通信が遮断されます。\n・ファイルを直接(file://)開いた場合も、ブラウザによっては遮断されます。\nアップロード画面の「接続テスト」で確認するか、簡易ローカルサーバー経由で開いてください。');
+    }
+    if (resp.ok) break;
+    if ((resp.status === 429 || resp.status >= 500) && attempt < MAX_RETRY) {
+      const ra = parseFloat(resp.headers.get('retry-after'));
+      const backoff = Math.min(30000, 1000 * Math.pow(2, attempt + 1)); // 2s,4s,8s（上限30s）
+      const waitMs = (ra > 0 ? ra * 1000 : backoff) + Math.floor(Math.random() * 500);
+      setLoadingMsg('混雑のため待機中', `${attempt + 1}回目の再試行まで約${Math.round(waitMs / 1000)}秒…`);
+      try { if (resp.body && resp.body.cancel) await resp.body.cancel(); } catch (e) {}
+      await sleep(waitMs);
+      continue;
+    }
     // エラー時はSSEではなくJSONのエラーボディが返る
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error?.message || `APIエラー (${resp.status})`);
+    throw new Error((err.error && err.error.message) || `APIエラー (${resp.status})`);
   }
 
   // SSEストリームから本文テキスト(text_delta)だけを結合する。思考ブロックは本文に含めない。
@@ -2689,6 +2850,8 @@ function sanitizeSVG(svgStr) {
     doc.querySelectorAll('*').forEach(el => {
       [...el.attributes].forEach(a => {
         if (/^on/i.test(a.name) || /javascript:/i.test(a.value)) el.removeAttribute(a.name);
+        // 外部URLへの参照（<image href>・<a href>等）は読み込ませない。#内部参照とdata:は許可
+        else if (/^(href|xlink:href)$/i.test(a.name) && !/^\s*(#|data:)/i.test(a.value)) el.removeAttribute(a.name);
       });
       // 【安全網】白背景で見えない薄色（明度が高い stroke/fill）を濃色へ補正
       ['stroke', 'fill'].forEach(prop => {
@@ -2735,6 +2898,7 @@ function clearFigureCaches() {
   pageCanvasCache.clear();
   pdfDocCache.clear();
   revokeFileUrls(); // 不要になったオブジェクトURLを解放（メモリリーク防止）
+  fpMemo = { key: '', ids: null }; // ファイル構成が変わったのでプール判定キーのメモも破棄
 }
 
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
@@ -3812,7 +3976,12 @@ function renderOrderRows(q, list) {
   list.innerHTML = '';
   orderState.forEach((itemIdx, pos) => {
     const row = document.createElement('div');
-    row.className = 'order-row';
+    row.className = 'order-row' + (answered ? '' : ' draggable');
+    row.title = answered ? '' : 'ドラッグして並べ替え';
+    const handle = document.createElement('div');
+    handle.className = 'order-drag';
+    handle.textContent = '↕';
+    if (answered) handle.style.opacity = '0.3';
     const num = document.createElement('div');
     num.className = 'order-pos';
     num.textContent = (pos + 1) + '.';
@@ -3828,7 +3997,15 @@ function renderOrderRows(q, list) {
     down.className = 'order-move-btn'; down.textContent = '▼'; down.disabled = pos === orderState.length - 1;
     down.onclick = () => moveOrderItem(pos, 1);
     moves.appendChild(up); moves.appendChild(down);
-    row.appendChild(num); row.appendChild(text); row.appendChild(moves);
+    // ブロック全体を掴んでドラッグ（▲▼ボタン上では発火しない）
+    if (!answered) row.addEventListener('pointerdown', e => startBlockDrag(e, {
+      pos,
+      getRows: () => document.getElementById('order-list').querySelectorAll('.order-row'),
+      getOrder: () => orderState,
+      rerender: () => renderOrderRows(questions[currentQ], document.getElementById('order-list')),
+      isLocked: () => answered
+    }));
+    row.appendChild(handle); row.appendChild(num); row.appendChild(text); row.appendChild(moves);
     list.appendChild(row);
   });
 }
@@ -3841,6 +4018,51 @@ function moveOrderItem(pos, dir) {
   renderOrderRows(questions[currentQ], document.getElementById('order-list'));
 }
 
+// 並べ替えのドラッグ（行ブロック全体を掴む）。隣接する行の中点を越えたら1つ入れ替える方式
+// （短いリスト向けで確実・ズレない）。pointermove/up は document に張るので、入れ替えのたびの
+// 再描画を跨いでも追従する。通常モード（orderState）と試験モード（examOrderState[i]）で共用。
+// opts: pos=掴んだ表示位置 / getRows()=行NodeList / getOrder()=生の並び配列(in-placeで入替) /
+//       rerender()=行を描き直す / isLocked()=回答・提出済みでドラッグ不可なら true
+function startBlockDrag(e, opts) {
+  if (opts.isLocked()) return;
+  if (e.button != null && e.button !== 0) return; // 右クリック等は無視
+  if (e.target.closest('button')) return;         // ▲▼ボタン上ではドラッグを開始しない（クリックさせる）
+  e.preventDefault();
+  let cur = opts.pos;
+  const mark = () => { const rows = opts.getRows(); if (rows[cur]) rows[cur].classList.add('dragging'); };
+  mark();
+  const swap = (a, b) => {
+    const order = opts.getOrder();
+    [order[a], order[b]] = [order[b], order[a]];
+    cur = b;
+    opts.rerender();
+    mark();
+  };
+  const onMove = ev => {
+    if (opts.isLocked()) { onUp(); return; }
+    const rows = opts.getRows();
+    const y = ev.clientY;
+    if (cur > 0) {
+      const prev = rows[cur - 1].getBoundingClientRect();
+      if (y < prev.top + prev.height / 2) { swap(cur, cur - 1); return; }
+    }
+    if (cur < rows.length - 1) {
+      const next = rows[cur + 1].getBoundingClientRect();
+      if (y > next.top + next.height / 2) { swap(cur, cur + 1); return; }
+    }
+  };
+  const onUp = () => {
+    const rows = opts.getRows();
+    if (rows[cur]) rows[cur].classList.remove('dragging');
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
+}
+
 function submitOrderAnswer() {
   if (answered) return;
   answered = true;
@@ -3849,8 +4071,10 @@ function submitOrderAnswer() {
   const allCorrect = orderState.every((v, i) => q.items[v] === q.items[i]);
 
   document.querySelectorAll('#order-list .order-row').forEach((row, pos) => {
+    row.classList.remove('draggable'); // ドラッグ無効化（cursor/touch-actionも戻る）
     row.classList.add(q.items[orderState[pos]] === q.items[pos] ? 'correct' : 'wrong');
     row.querySelectorAll('.order-move-btn').forEach(b => b.disabled = true);
+    row.querySelectorAll('.order-drag').forEach(h => { h.style.opacity = '0.3'; });
   });
   if (!allCorrect) {
     const note = document.createElement('div');
@@ -4311,6 +4535,41 @@ function involvesMatrix(q) {
   return /\\begin\{[a-zA-Z]*matrix\}|行列/.test(s);
 }
 
+// 問題文の字数指定を返す。「N文字以内」＝上限(hard)、「N文字程度」＝目安(soft)。無ければ null。全角数字も許容。
+function parseCharLimit(q) {
+  const s = String((q && q.question) || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  let m = s.match(/(\d+)\s*(?:文字|字)\s*以内/);
+  if (m) return { n: parseInt(m[1], 10), hard: true };
+  m = s.match(/(\d+)\s*(?:文字|字)\s*程度/);
+  if (m) return { n: parseInt(m[1], 10), hard: false };
+  return null;
+}
+
+// 記述の回答欄に文字数カウンタを付ける。
+//  ・「N文字以内」：現在/上限字 を表示し、超過で赤（.over）。
+//  ・「N文字程度」：現在/目安字（目安）を表示（“程度”なので超過赤は付けない）。
+//  ・指定なし：現在字 のみ。
+// カウントはコードポイント単位（[...str].length）＝サロゲートペアも1文字として数える。
+// 数式キーボードでの挿入も input イベントを発火するので、その入力も自動で反映される。
+function attachCharCounter(textarea, q, container) {
+  const lim = parseCharLimit(q);
+  const counter = document.createElement('div');
+  counter.className = 'char-counter';
+  const update = () => {
+    const n = [...textarea.value].length;
+    if (lim) {
+      counter.textContent = n + ' / ' + lim.n + '字' + (lim.hard ? '' : '（目安）');
+      counter.classList.toggle('over', lim.hard && n > lim.n);
+    } else {
+      counter.textContent = n + '字';
+    }
+  };
+  textarea.addEventListener('input', update);
+  update();
+  container.appendChild(counter);
+  return counter;
+}
+
 function renderTextQuestion(q, container) {
   // 行列が絡む記述では、初心者向けに入力の書き方を案内する（[1 2; 3 4] が自明でないため）
   if (involvesMatrix(q)) {
@@ -4341,6 +4600,7 @@ function renderTextQuestion(q, container) {
   });
   registerMathInput(ta);
   container.appendChild(ta);
+  attachCharCounter(ta, q, container); // 文字数カウンタ（「N文字以内」指定があれば上限も表示）
   requestAnimationFrame(autoGrow); // 初期表示・再開時の復元内容に合わせて高さを整える
 
   const submit = document.createElement('button');
@@ -4593,11 +4853,365 @@ function nextQuestion() {
   }
 }
 
+// ─── EXAM MODE (試験モード：全問一括表示＋制限時間＋一括採点) ─────
+// 単一問題レンダラー（固定ID・グローバル依存）は流用できないため、試験専用の軽量レンダラーと
+// 一括採点を持つ。採点結果は history に詰め（true/false、draw/graphβは採点対象外＝null）、
+// 既存の showResults() をそのまま利用する。図（renderExamFigure）・数式キーボード
+//（registerMathInput）・穴埋め/表のAI同値判定（gradeCellsExam）に対応済み。記述は簡易キーワード採点。
+let examTimer = null;      // カウントダウンの interval
+let examEndTime = 0;       // 終了時刻(ms)
+let examSubmitted = false; // 提出済みか（二重採点防止）
+let examActive = false;    // 試験の実施中か（画面遷移で試験が消滅・復帰不能になるのを防ぐガード）
+let examOrderState = {};   // 並べ替え問題の現在の並び（問題index→項目indexの配列）
+
+// モード切替（開始時に読むので基本は何もしない。将来のUI調整用フック）
+function onModeChange(v) { /* mode は startQuiz/startQuizFromQuestions で読む */ }
+
+// クイズ開始の共通入口：モードに応じて通常クイズ or 試験モードへ振り分ける
+function enterQuiz() {
+  const bar = document.getElementById('global-stats-bar');
+  if (storedSettings.mode === 'exam') {
+    if (bar) bar.classList.remove('visible');
+    startExam();
+  } else {
+    if (bar) bar.classList.add('visible');
+    showQuizQuestion();
+    showScreen('screen-quiz');
+  }
+}
+
+function startExam() {
+  // SRS復習（quizKind='srs'）はそのまま維持する。'exam' で上書きすると recordSRSFromResult が
+  // 通常クイズ扱いになり、正解してもboxが昇格・卒業しない（＝復習が壊れる）ため。
+  if (quizKind !== 'srs') quizKind = 'exam';
+  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  currentDifficulty = storedSettings.difficulty || 'medium';
+  examOrderState = {};
+  examSubmitted = false;
+  examActive = true;
+  // タブを閉じても問題セット（有料生成分）を失わないよう保存する。再開バナーから
+  // 試験をやり直すか「破棄」でき、破棄・完了時に教材ファイル(IndexedDB)も削除される。
+  saveQuizState();
+  renderExamSheet();
+  showScreen('screen-exam');
+  // 数式キーボードは入力欄のある形式（穴埋め・表・記述）が含まれる時だけ表示（通常モードと同じ基準）
+  setMathToolsVisible(questions.some(q => ['fill', 'table', 'text'].includes(q.type)));
+  window.scrollTo(0, 0);
+  startExamTimer(storedSettings.examMinutes || 30);
+}
+
+// 穴埋め問題文：空欄を (1)(2)… の番号プレースホルダにして表示（数式は壊さない）
+function examFillText(q) {
+  return fillQuestionTextWith(q, (n, inMath) => inMath ? '\\boxed{(' + (n + 1) + ')}' : '（' + (n + 1) + '）');
+}
+
+function renderExamSheet() {
+  const list = document.getElementById('exam-list');
+  list.innerHTML = '';
+  const totalEl = document.getElementById('exam-total');
+  if (totalEl) totalEl.textContent = questions.length;
+  questions.forEach((q, i) => {
+    const card = document.createElement('div');
+    card.id = 'exq-' + i;
+    card.style.cssText = 'border:1px solid var(--border2); border-radius:12px; padding:16px; margin:14px 0; background:var(--surface);';
+    const head = document.createElement('div');
+    head.style.cssText = 'font-weight:600; margin-bottom:10px; line-height:1.7;';
+    const qText = (q.type === 'fill') ? examFillText(q) : q.question;
+    head.innerHTML = 'Q' + (i + 1) + '. ' + mathToHtml(qText) +
+      ' <span style="font-size:11px; color:var(--text3); font-weight:400;">[' + typeLabel(q) + ']</span>';
+    card.appendChild(head);
+    renderExamFigure(q, i, card); // 図（実図切り出し→AI生成SVG）を非同期で挿入
+    const body = document.createElement('div');
+    renderExamInput(q, i, body);
+    card.appendChild(body);
+    list.appendChild(card);
+  });
+}
+
+function renderExamInput(q, i, body) {
+  const inputStyle = 'flex:1; min-width:140px; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:8px 10px; font-size:16px; font-family:inherit;';
+  if (q.type === 'choice') {
+    (q.choices || []).forEach((ch, j) => {
+      const lab = document.createElement('label');
+      lab.style.cssText = 'display:flex; align-items:flex-start; gap:8px; padding:6px 4px; cursor:pointer; line-height:1.6;';
+      const r = document.createElement('input'); r.type = 'radio'; r.name = 'exq-' + i; r.value = j; r.style.marginTop = '3px';
+      const span = document.createElement('span'); span.innerHTML = mathToHtml(ch);
+      lab.appendChild(r); lab.appendChild(span); body.appendChild(lab);
+    });
+  } else if (q.type === 'fill') {
+    const n = (q.blanks || []).length;
+    for (let bi = 0; bi < n; bi++) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:8px; margin:6px 0; flex-wrap:wrap;';
+      const lab = document.createElement('span'); lab.style.cssText = 'font-size:13px; color:var(--text2);'; lab.textContent = '空欄(' + (bi + 1) + ')';
+      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'exam-fill'; inp.dataset.bi = bi; inp.autocomplete = 'off'; inp.style.cssText = inputStyle;
+      registerMathInput(inp);
+      row.appendChild(lab); row.appendChild(inp); body.appendChild(row);
+    }
+  } else if (q.type === 'table') {
+    const wrap = document.createElement('div'); wrap.style.overflowX = 'auto';
+    const table = document.createElement('table'); table.className = 'quiz-table';
+    if (q.headers && q.headers.length) {
+      const thead = document.createElement('thead'); const tr = document.createElement('tr');
+      q.headers.forEach(h => { const th = document.createElement('th'); setMath(th, h); tr.appendChild(th); });
+      thead.appendChild(tr); table.appendChild(thead);
+    }
+    const tbody = document.createElement('tbody');
+    (q.rows || []).forEach((row, r) => {
+      const tr = document.createElement('tr');
+      row.forEach((cell, c) => {
+        const td = document.createElement('td');
+        if (isBlankCell(q, r, c)) {
+          const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'exam-tcell'; inp.dataset.r = r; inp.dataset.c = c; inp.autocomplete = 'off';
+          inp.style.cssText = 'width:100%; min-width:80px; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; color:var(--text); padding:6px 8px; font-size:16px; font-family:inherit;';
+          registerMathInput(inp);
+          td.appendChild(inp);
+        } else { if (c === 0) td.className = 'rowhead'; setMath(td, cell); }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody); wrap.appendChild(table); body.appendChild(wrap);
+  } else if (q.type === 'text') {
+    const ta = document.createElement('textarea'); ta.className = 'exam-text'; ta.rows = 3;
+    ta.style.cssText = 'width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:8px 10px; font-size:16px; font-family:inherit; resize:vertical;';
+    registerMathInput(ta);
+    body.appendChild(ta);
+    attachCharCounter(ta, q, body); // 文字数カウンタ（「N文字以内」指定があれば上限も表示）
+  } else if (q.type === 'sort') {
+    (q.items || []).forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:10px; margin:6px 0; flex-wrap:wrap;';
+      const lab = document.createElement('div'); lab.style.cssText = 'flex:1; min-width:120px;'; setMath(lab, item);
+      const sel = document.createElement('select'); sel.className = 'exam-sort'; sel.dataset.item = idx;
+      sel.style.cssText = 'background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:6px 10px; font-size:16px; font-family:inherit;';
+      const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '（分類を選択）'; sel.appendChild(o0);
+      (q.categories || []).forEach((cat, ci) => { const o = document.createElement('option'); o.value = ci; o.textContent = cat; sel.appendChild(o); });
+      row.appendChild(lab); row.appendChild(sel); body.appendChild(row);
+    });
+  } else if (q.type === 'order') {
+    let idxs = shuffleArray((q.items || []).map((_, k) => k));
+    if ((q.items || []).length > 1 && idxs.every((v, k) => q.items[v] === q.items[k])) idxs.push(idxs.shift());
+    examOrderState[i] = idxs;
+    const listEl = document.createElement('div'); listEl.id = 'exq-' + i + '-order';
+    body.appendChild(listEl);
+    renderExamOrderRows(q, i, listEl);
+  } else {
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:13px; color:var(--amber);';
+    note.textContent = 'この形式（' + typeLabel(q) + '）は試験モードでは採点対象外です（正答率などの成績には含まれません）。';
+    body.appendChild(note);
+  }
+}
+
+// 試験用の図表示（実図切り出し→AI生成SVG の順。カード直下に非同期で挿入）。出典は openSourceModal(i)。
+async function renderExamFigure(q, i, host) {
+  const figDiv = document.createElement('div');
+  figDiv.style.cssText = 'margin:8px 0; display:none; flex-direction:column; align-items:center; gap:6px;';
+  host.appendChild(figDiv);
+
+  // 1) 教材からの実画像切り出しを優先
+  if (q.figure_ref && uploadedFiles[q.figure_ref.file]) {
+    let img = null;
+    try { img = await renderFigureCrop(q.figure_ref); } catch (e) {}
+    if (img) {
+      img.style.maxWidth = '100%'; img.style.height = 'auto';
+      figDiv.appendChild(img);
+      const cap = document.createElement('div'); cap.className = 'figure-caption'; cap.textContent = '教材から抜粋';
+      if (q.source) {
+        const link = document.createElement('button'); link.className = 'figure-link'; link.textContent = '全体を見る';
+        link.onclick = () => openSourceModal(i);
+        cap.append(' ・ ', link);
+      }
+      figDiv.appendChild(cap);
+      figDiv.style.display = 'flex';
+      return;
+    }
+  }
+  // 2) フォールバック：AI生成SVG
+  const safe = q.figure_svg ? sanitizeSVG(q.figure_svg) : null;
+  if (safe) {
+    const w = document.createElement('div'); w.innerHTML = safe; figDiv.appendChild(w);
+    const cap = document.createElement('div'); cap.className = 'figure-caption'; cap.textContent = 'AIが作成した図（参考・誤りがあり得ます）';
+    figDiv.appendChild(cap);
+    figDiv.style.display = 'flex';
+  }
+}
+
+function renderExamOrderRows(q, i, listEl) {
+  listEl.innerHTML = '';
+  examOrderState[i].forEach((itemIdx, pos) => {
+    const row = document.createElement('div');
+    row.className = 'exam-order-row' + (examSubmitted ? '' : ' draggable');
+    row.style.cssText = 'display:flex; align-items:center; gap:8px; margin:4px 0;';
+    if (!examSubmitted) row.title = 'ドラッグして並べ替え';
+    const handle = document.createElement('div'); handle.className = 'order-drag'; handle.textContent = '↕';
+    const num = document.createElement('div'); num.style.cssText = 'width:26px; color:var(--text3);'; num.textContent = (pos + 1) + '.';
+    const text = document.createElement('div'); text.style.flex = '1'; setMath(text, q.items[itemIdx]);
+    const up = document.createElement('button'); up.className = 'btn-secondary'; up.style.cssText = 'padding:2px 10px;'; up.textContent = '▲'; up.disabled = pos === 0; up.onclick = () => examMoveOrder(i, pos, -1);
+    const down = document.createElement('button'); down.className = 'btn-secondary'; down.style.cssText = 'padding:2px 10px;'; down.textContent = '▼'; down.disabled = pos === examOrderState[i].length - 1; down.onclick = () => examMoveOrder(i, pos, 1);
+    // ブロック全体を掴んでドラッグ（▲▼ボタン上では発火しない）
+    if (!examSubmitted) row.addEventListener('pointerdown', e => startBlockDrag(e, {
+      pos,
+      getRows: () => document.getElementById('exq-' + i + '-order').querySelectorAll('.exam-order-row'),
+      getOrder: () => examOrderState[i],
+      rerender: () => renderExamOrderRows(questions[i], i, document.getElementById('exq-' + i + '-order')),
+      isLocked: () => examSubmitted
+    }));
+    row.appendChild(handle); row.appendChild(num); row.appendChild(text); row.appendChild(up); row.appendChild(down);
+    listEl.appendChild(row);
+  });
+}
+function examMoveOrder(i, pos, dir) {
+  if (examSubmitted) return;
+  const st = examOrderState[i]; const np = pos + dir;
+  if (np < 0 || np >= st.length) return;
+  [st[pos], st[np]] = [st[np], st[pos]];
+  renderExamOrderRows(questions[i], i, document.getElementById('exq-' + i + '-order'));
+}
+
+// タイマー
+function startExamTimer(minutes) {
+  const total = Math.max(1, minutes | 0) * 60;
+  examEndTime = Date.now() + total * 1000;
+  updateExamTimer();
+  clearInterval(examTimer);
+  examTimer = setInterval(updateExamTimer, 1000);
+}
+function updateExamTimer() {
+  const remain = Math.max(0, Math.round((examEndTime - Date.now()) / 1000));
+  const el = document.getElementById('exam-timer');
+  if (el) {
+    const mm = String(Math.floor(remain / 60)).padStart(2, '0');
+    const ss = String(remain % 60).padStart(2, '0');
+    el.textContent = mm + ':' + ss;
+    el.style.color = remain <= 60 ? 'var(--red)' : '';
+  }
+  if (remain <= 0) { clearInterval(examTimer); submitExam(true); }
+}
+
+// 採点中のUI（提出ボタンを無効化・「採点中…」表示。AI同値判定に時間がかかるため）
+function setExamGrading(on) {
+  const t = document.getElementById('exam-timer');
+  if (t && on) t.textContent = 'AI採点中…';
+  document.querySelectorAll('#screen-exam .btn-primary').forEach(b => {
+    b.disabled = on; b.textContent = on ? '採点中…' : '採点する（提出）';
+  });
+}
+
+// 提出（auto=時間切れ）。全問を一括採点し、既存の結果画面へ。AI同値判定はONかつキー有り時のみ。
+async function submitExam(auto) {
+  if (examSubmitted) return;
+  if (!auto && !confirm('採点して結果を表示します。よろしいですか？\n（未回答は不正解になります。提出後は戻れません）')) return;
+  examSubmitted = true;
+  clearInterval(examTimer);
+  setExamGrading(true);
+  correctCount = 0; wrongCount = 0; history = [];
+  try {
+    for (let i = 0; i < questions.length; i++) {
+      const t = questions[i].type;
+      if (t === 'draw' || t === 'graph') { history.push(null); continue; } // 採点対象外＝成績に含めない（不正解扱いにしない）
+      const ok = await gradeExamQuestion(questions[i], i);
+      history.push(ok);
+      if (ok) correctCount++; else wrongCount++;
+    }
+  } catch (e) {
+    // 想定外のエラーで「採点中…」のまま固まらないよう、提出前の状態に戻して再提出できるようにする
+    console.error(e);
+    examSubmitted = false;
+    setExamGrading(false);
+    alert('採点中にエラーが発生しました: ' + (e && e.message ? e.message : e) + '\nもう一度「採点する（提出）」を押してください。');
+    return;
+  }
+  examActive = false;
+  setExamGrading(false);
+  showResults();
+}
+
+// 穴埋め・表のセル群を採点：まず文字列一致、外れた非空セルは（非厳密かつAI可なら）AI同値判定でまとめて拾う
+async function gradeCellsExam(q, cells, strict) {
+  cells.forEach(c => c.ok = answerMatches(c.userValue, c.accepts, strict));
+  const unresolved = cells.filter(c => !c.ok && c.userValue.trim() !== '');
+  if (unresolved.length && !strict && aiEquivAvailable()) {
+    try {
+      const verdicts = await aiCheckEquivalence(q, unresolved.map(c => ({ user: c.userValue, correct: c.correctValue })));
+      unresolved.forEach((c, i) => { if (verdicts[i] === true) c.ok = true; });
+    } catch (e) {}
+  }
+  return cells.every(c => c.ok);
+}
+
+// 1問分の採点（DOMから回答を読む）。真偽を返す。fill/table は AI同値判定を使うため async。
+async function gradeExamQuestion(q, i) {
+  const card = document.getElementById('exq-' + i);
+  if (!card) return false;
+  const strict = isStrictQuestion(q);
+  switch (q.type) {
+    case 'choice': {
+      const sel = card.querySelector('input[type=radio]:checked');
+      return sel ? (parseInt(sel.value) === q.correct) : false;
+    }
+    case 'fill': {
+      const inputs = [...card.querySelectorAll('.exam-fill')];
+      if (!inputs.length) return false;
+      const cells = inputs.map(inp => {
+        const bi = parseInt(inp.dataset.bi);
+        return { userValue: inp.value, accepts: [q.blanks[bi], ...((q.accept && q.accept[bi]) || [])], correctValue: q.blanks[bi] ?? '' };
+      });
+      return await gradeCellsExam(q, cells, strict);
+    }
+    case 'table': {
+      const inputs = [...card.querySelectorAll('.exam-tcell')];
+      if (!inputs.length) return false;
+      const cells = inputs.map(inp => {
+        const r = parseInt(inp.dataset.r), c = parseInt(inp.dataset.c);
+        return { userValue: inp.value, accepts: tableBlankAccepts(q, r, c), correctValue: q.rows[r][c] ?? '' };
+      });
+      return await gradeCellsExam(q, cells, strict);
+    }
+    case 'text': {
+      const ta = card.querySelector('.exam-text');
+      const val = ta ? ta.value.trim() : '';
+      if (!val) return false;
+      // 通常モードと同じAI採点（gradeTextAnswer）で合否判定する。キーが無い/失敗時は
+      // gradeTextAnswer 内部で keywordGrade に自動フォールバックする。合格基準も通常モードと同じ score>=60。
+      const g = await gradeTextAnswer(q, val);
+      return g.score >= 60;
+    }
+    case 'sort': {
+      const sels = [...card.querySelectorAll('.exam-sort')];
+      if (sels.length !== (q.items || []).length) return false;
+      return sels.every(s => s.value !== '' && parseInt(s.value) === q.answer[parseInt(s.dataset.item)]);
+    }
+    case 'order': {
+      const st = examOrderState[i];
+      if (!st) return false;
+      return st.every((v, idx) => q.items[v] === q.items[idx]);
+    }
+    default: return false; // draw/graph(β)は自動採点対象外＝不正解扱い
+  }
+}
+
+function quitExam() {
+  const isDemo = !!storedSettings.isDemo;
+  const msg = isDemo
+    ? 'お試しの試験を終了して最初の画面に戻ります。よろしいですか？（採点されません）'
+    : '試験を中断して最初の画面に戻ります。（採点されません）\n\n回答内容は保存されませんが、「続きから再開」で同じ問題セットの試験をやり直せます。よろしいですか？';
+  if (!confirm(msg)) return;
+  clearInterval(examTimer);
+  examSubmitted = true;
+  examActive = false;
+  if (isDemo) clearQuizState(); // デモは再開対象にしない（教材・状態を残さない）
+  showScreen('screen-upload'); // 通常は保存済みの状態を残す＝再開バナーから「やり直し」or「破棄（教材も削除）」できる
+}
+
 // ─── RESULTS ───────────────────────────────────────────────────
 function showResults() {
   clearQuizState(); // 完了したら中断データを消す（再開バナーを出さない）
   const total = questions.length;
-  const pct = Math.round(correctCount / total * 100);
+  // 採点対象外（試験モードのdraw/graphβ＝history[i]がnull）は正答率の母数に含めない
+  const gradedTotal = history.filter(v => typeof v === 'boolean').length;
+  const pct = Math.round(correctCount / (gradedTotal || total) * 100);
 
   document.getElementById('final-pct').textContent = pct + '%';
   document.getElementById('r-total').textContent = total;
@@ -4623,13 +5237,17 @@ function showResults() {
   reviewList.innerHTML = '';
   questions.forEach((q, i) => {
     const correct = history[i];
+    const graded = typeof correct === 'boolean'; // null＝採点対象外（試験モードのdraw/graphβ）
+    const resultTag = graded
+      ? `<span class="tag ${correct ? 'correct' : 'wrong'}">${correct ? '✓ 正解' : '✗ 不正解'}</span>`
+      : '<span class="tag info">－ 採点対象外</span>';
     const qText = (q.type === 'fill') ? formatFillQuestionText(q) : q.question;
     const div = document.createElement('div');
     div.className = 'review-item';
     div.innerHTML = `
       <div class="q-text">Q${i+1}. ${mathToHtml(qText)}</div>
       <div class="answer-row">
-        <span class="tag ${correct ? 'correct' : 'wrong'}">${correct ? '✓ 正解' : '✗ 不正解'}</span>
+        ${resultTag}
         <span class="tag info">${typeLabel(q)}</span>
         <span class="tag info">正解：${mathToHtml(formatAnswerText(q))}</span>
         ${q.topic ? `<span style="font-size:12px; color:var(--text3);">${escapeHtml(q.topic)}</span>` : ''}
@@ -4682,6 +5300,7 @@ function formatFillQuestionText(q) {
 function saveQuizToHistory(pct) {
   const topics = {};
   questions.forEach((q, i) => {
+    if (typeof history[i] !== 'boolean') return; // 採点対象外（null）はトピック集計に含めない
     const t = q.topic || 'その他';
     if (!topics[t]) topics[t] = { correct: 0, total: 0 };
     topics[t].total++;
@@ -4710,7 +5329,14 @@ const SRS_MAX = 200;
 function loadSRS() {
   try { const a = JSON.parse(localStorage.getItem(SRS_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
 }
-function saveSRS(arr) { try { localStorage.setItem(SRS_KEY, JSON.stringify(arr)); } catch {} }
+function saveSRS(arr) {
+  try { localStorage.setItem(SRS_KEY, JSON.stringify(arr)); }
+  catch (e) {
+    // 従来は黙って握りつぶしていたため、容量到達時に苦手リストが静かに保存されなくなっていた
+    console.warn('[AIQuiz] 苦手リストを保存できませんでした', e);
+    try { notifyStorageFull(e); } catch (e2) {}
+  }
+}
 function srsKey(q) { return normalizeText((q && q.question) || '') + '|' + ((q && q.type) || ''); }
 function srsDaysFromNow(d) { return Date.now() + d * 86400000; }
 
@@ -4781,10 +5407,14 @@ function addWrongToSRS(q) {
   const key = srsKey(q);
   const topic = (q.topic || '').toString();
   const nt = normalizeTopic(topic);
+  // 保存用に複製（ライブの問題オブジェクトは変更しない）。極端に大きいAI作図SVGだけ外し、
+  // localStorage枯渇でSRS全体が保存できなくなるのを防ぐ（通常サイズの図は復習時もそのまま出る）。
+  const qc = JSON.parse(JSON.stringify(q));
+  if (typeof qc.figure_svg === 'string' && qc.figure_svg.length > 50000) delete qc.figure_svg;
   const ex = arr.find(it => it.key === key);
-  if (ex) { ex.box = 1; ex.due = Date.now(); ex.wrongCount = (ex.wrongCount || 0) + 1; ex.q = q; ex.topic = topic; ex.nt = nt; }
+  if (ex) { ex.box = 1; ex.due = Date.now(); ex.wrongCount = (ex.wrongCount || 0) + 1; ex.q = qc; ex.topic = topic; ex.nt = nt; }
   else {
-    arr.push({ key, q, box: 1, due: Date.now(), wrongCount: 1, addedAt: Date.now(), topic, nt });
+    arr.push({ key, q: qc, box: 1, due: Date.now(), wrongCount: 1, addedAt: Date.now(), topic, nt });
     while (arr.length > SRS_MAX) arr.shift();
   }
   saveSRS(arr);
@@ -4796,11 +5426,11 @@ function updateSRSAfterReview(qs, hist) {
   qs.forEach((q, i) => {
     const idx = arr.findIndex(it => it.key === srsKey(q));
     if (idx < 0) return;
-    if (hist[i]) {
+    if (hist[i] === true) {
       const nb = arr[idx].box + 1;
       if (nb > 5) { arr.splice(idx, 1); return; } // 5回連続で正解＝卒業（ボックスから除外）
       arr[idx].box = nb; arr[idx].due = clipDueToExam(srsDaysFromNow(SRS_INTERVALS[nb] || 1));
-    } else {
+    } else if (hist[i] === false) { // null（採点対象外）はboxを動かさない
       arr[idx].box = 1; arr[idx].due = Date.now(); arr[idx].wrongCount = (arr[idx].wrongCount || 0) + 1;
     }
   });
@@ -4813,7 +5443,8 @@ function srsDueItems() { const now = Date.now(); return loadSRS().filter(it => (
 function recordSRSFromResult() {
   if (storedSettings.isDemo) return;
   if (quizKind === 'srs') updateSRSAfterReview(questions, history);
-  else questions.forEach((q, i) => { if (!history[i]) addWrongToSRS(q); });
+  // history[i]===null（採点対象外）は「間違えた」わけではないのでSRSに登録しない
+  else questions.forEach((q, i) => { if (history[i] === false) addWrongToSRS(q); });
 }
 
 function checkSRS() {
@@ -4946,12 +5577,20 @@ function startQuizFromQuestions(qs, settings, kind) {
     extra: '', fromSaved: true
   }, settings || {});
   storedSettings.fromSaved = true; // 保存/デモ由来は生成系（再生成・類似）を出さない
+  // アップロード画面のモード選択を尊重（保存セット・プール出題も試験モードで開始できる）。
+  // ただし「AIで問題を生成する」ボタン以外の入口（プールバナー・保存セット読込・デモ・苦手復習）では、
+  // 以前の生成で選んだ試験モードが残っていて不意打ちで試験が始まらないよう、開始前に確認する。
+  // 生成ボタン経由のプール出題（maybeHandlePoolFlow/startPoolBuildAndQuiz）は modeConfirmed:true で確認を飛ばす。
+  let mode = (document.getElementById('quiz-mode') || {}).value || 'normal';
+  if (mode === 'exam' && !storedSettings.modeConfirmed) {
+    if (!confirm('モードが「試験モード」になっています。\n試験モード（制限時間つき・全問一括の採点）で始めますか？\n\n「キャンセル」を選ぶと通常モード（1問ずつ回答）で始めます。')) mode = 'normal';
+  }
+  storedSettings.mode = mode;
+  storedSettings.examMinutes = parseInt((document.getElementById('exam-minutes') || {}).value) || 30;
   currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
   currentDifficulty = storedSettings.difficulty;
   quizKind = kind || 'normal';
-  document.getElementById('global-stats-bar').classList.add('visible');
-  showQuizQuestion();
-  showScreen('screen-quiz');
+  enterQuiz(); // モード（通常/試験）に応じて出題を開始
 }
 
 function startDemo() {
@@ -4978,9 +5617,7 @@ function redoSameQuiz() {
   if (!questions || !questions.length) return;
   currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
   currentDifficulty = storedSettings.difficulty;
-  document.getElementById('global-stats-bar').classList.add('visible');
-  showQuizQuestion();
-  showScreen('screen-quiz');
+  enterQuiz(); // 通常/試験モードに応じてやり直す
 }
 
 // 現在の問題セットをJSONファイルに保存（再生成不要・他者へ配布可）
@@ -5028,24 +5665,31 @@ const RESUME_KEY = 'aiquiz_resume';
 // 再開時に読み戻して図の切り出し・出典表示を復元し、終了・破棄時に削除する（教材をブラウザに残さない）。
 const IDB_NAME = 'aiquiz';
 const IDB_STORE = 'resume_files';
+const POOL_STORE = 'pools';       // 問題プール（大量生成した問題の保存フォルダ）
 const IDB_FILES_KEY = 'current';
 
 function idbOpen() {
   return new Promise((resolve, reject) => {
     let req;
-    try { req = indexedDB.open(IDB_NAME, 1); } catch (e) { reject(e); return; }
-    req.onupgradeneeded = () => { try { req.result.createObjectStore(IDB_STORE); } catch (e) {} };
+    try { req = indexedDB.open(IDB_NAME, 2); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) { try { db.createObjectStore(IDB_STORE); } catch (e) {} }
+      if (!db.objectStoreNames.contains(POOL_STORE)) { try { db.createObjectStore(POOL_STORE); } catch (e) {} }
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
 // objectStore に対する1操作を行い、結果を返す（成功時はトランザクション完了を待つ）
-function idbRun(mode, fn) {
+// storeName 省略時は再開ファイル用ストア。問題プールは POOL_STORE を渡す。
+function idbRun(mode, fn, storeName) {
+  const store = storeName || IDB_STORE;
   return idbOpen().then(db => new Promise((resolve, reject) => {
     let r;
-    const tx = db.transaction(IDB_STORE, mode);
-    r = fn(tx.objectStore(IDB_STORE));
+    const tx = db.transaction(store, mode);
+    r = fn(tx.objectStore(store));
     tx.oncomplete = () => { resolve(r ? r.result : undefined); db.close(); };
     tx.onerror = () => { reject(tx.error); db.close(); };
     tx.onabort = () => { reject(tx.error); db.close(); };
@@ -5121,14 +5765,607 @@ async function resumeQuiz() {
   );
   storedSettings.apiKey = document.getElementById('api-key') ? document.getElementById('api-key').value.trim() : '';
   storedSettings.fromSaved = true; // 再開は元ファイルが無いので生成系は出さない
-  document.getElementById('global-stats-bar').classList.add('visible');
-  showQuizQuestion();
-  showScreen('screen-quiz');
+  // モードに応じて再開する（通常＝続きの問題から／試験＝回答はDOMにしか無いため最初から・時間もリセット）
+  enterQuiz();
 }
 function discardResume() {
   clearQuizState();
   const b = document.getElementById('resume-banner');
   if (b) b.style.display = 'none';
+}
+
+// ─── QUESTION POOL (大きめPDF → 大量の問題プールを作り、以降は無料で出題) ──
+// 方針：所定のページ数を超えるPDFは、初回だけAIで大量に問題を作って IndexedDB に保存する。
+//   2回目以降は同じファイルを判別し、API を呼ばずプールから（毎回ちがう問題を）出題する＝無料。
+//   作成はバックグラウンドで進み、最初のまとまりができ次第クイズを開始できる。
+// 保存構造：IndexedDB の POOL_STORE に、ファイル判別キーをIDとした「保存フォルダ」1件ずつ。
+//   各プールは name（判別しやすい名前・変更可）／元ファイル（図・出典復元用）／設定／questions を持つ。
+const POOL_PAGE_THRESHOLD = 5;  // このページ数を超えるPDFでプール方式を提案（用途に合わせて変更可）
+const POOL_TARGET = 60;         // 作成する問題プールの目標問数（例：50〜100）
+const POOL_BATCH = 15;          // 1回のAI生成で作る問数（複数回に分けて目標へ到達）
+const POOL_MAX_BATCHES = 12;    // 暴走・課金しすぎ防止：最大バッチ数
+let poolBuildActive = false;    // プール作成が進行中か（二重起動防止）
+let poolToastTimer = null;
+
+// ── IndexedDB（POOL_STORE）への読み書き ──
+function poolPut(pool)   { return idbRun('readwrite', os => os.put(pool, pool.id), POOL_STORE); }
+function poolGet(id)     { return idbRun('readonly',  os => os.get(id), POOL_STORE); }
+function poolDelete(id)  { return idbRun('readwrite', os => os.delete(id), POOL_STORE); }
+function poolList()      { return idbRun('readonly',  os => os.getAll(), POOL_STORE).then(a => Array.isArray(a) ? a : []); }
+
+// ── 保存容量オーバー（QuotaExceeded）の検知・通知（#5） ──
+// 従来は保存失敗を .catch(()=>{}) で握りつぶしていたため、容量オーバーで「保存できたつもりが空」に
+// なり得た。容量エラーだけは検知してユーザーに知らせる（それ以外の一時エラーは従来どおり黙って続行）。
+let storageFull = false;   // このセッションで容量オーバーを検知したか（ハブの容量表示を赤にする）
+let storageWarned = false; // 大きな警告アラートはセッション中1回だけ
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || /quota/i.test(e.message || ''));
+}
+function notifyStorageFull(e) {
+  if (!isQuotaError(e)) return; // 容量以外のエラーは無視（保存の一時失敗は致命でない）
+  storageFull = true;
+  try { refreshDataModal(); } catch (err) {} // ハブが開いていれば容量表示を即赤に
+  if (storageWarned) return;
+  storageWarned = true;
+  alert('このブラウザの保存容量がいっぱいで、問題プール等を保存できませんでした。\n\n' +
+        'ヘッダーの「データ管理」から不要な問題プールを削除するか、バックアップに書き出してから削除すると空きが増えます。');
+}
+// プールデータの保存（容量オーバーだけ通知し、それ以外は従来どおり静かに続行）。呼び出し側は await のみでよい。
+function poolSaveGuarded(pool) {
+  return poolPut(pool).catch(e => { notifyStorageFull(e); });
+}
+
+// 作成中の保存：この間に serve/rename が cursor・order・name を更新しているかもしれないので、
+// 最新レコードのそれらを尊重しつつ（questions は増えた自分を採用）保存し、lost-update を減らす。
+async function poolSaveMerge(pool) {
+  try {
+    const latest = await poolGet(pool.id);
+    if (latest) {
+      if (typeof latest.cursor === 'number') pool.cursor = latest.cursor;
+      if (Array.isArray(latest.order)) pool.order = latest.order;
+      if (latest.name) pool.name = latest.name;
+    }
+  } catch (e) {}
+  return poolSaveGuarded(pool);
+}
+
+// 起動時：作成が中断されて 'building' のまま残ったプールを 'ready' に正常化する
+// （リロード時点でバックグラウンド作成は動いていないため、作成中表示が固定化するのを防ぐ）。
+async function reconcileStalePools() {
+  try {
+    const pools = await poolList();
+    for (const p of pools) {
+      if (!p.questions || !p.questions.length) { await poolDelete(p.id).catch(() => {}); continue; } // 空の幽霊プールは掃除
+      if (p.status === 'building') { p.status = 'ready'; await poolPut(p).catch(() => {}); }
+    }
+  } catch (e) {}
+}
+
+// ── 小さなユーティリティ ──
+function poolNormQ(s) { return (s || '').replace(/\s+/g, ' ').trim().toLowerCase(); } // 重複判定用の正規化
+function poolHashStr(s) { let h = 5381; for (let i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) | 0; } return (h >>> 0).toString(36); }
+function poolShuffledIndices(n) {
+  const a = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// アップロード中PDFの総ページ数（pdf.jsで数える。読めなければ0）
+async function countUploadedPdfPages() {
+  let total = 0;
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    if (uploadedFiles[i].type !== 'application/pdf') continue;
+    try { const pdf = await getPdfDoc(i); total += pdf.numPages || 0; } catch (e) {}
+  }
+  return total;
+}
+// ── 同一ファイル判定キー。PDFが無ければ null。──
+// 旧IDは「名前+サイズ+総ページ数」のみで理論上の衝突があったため、現行IDは各ファイル
+// 先頭8KBの内容ハッシュも含める。旧ID（legacyId）のプールは poolGetForCurrentFiles() が
+// 参照時に新IDへ自動移行する（既存ユーザーのプールを壊さない後方互換）。
+// 計算はファイル構成ごとにメモ化し、アップロード画面を開くたびのPDF再解析を避ける
+//（メモは clearFigureCaches ＝ ファイル変更時に破棄される）。
+let fpMemo = { key: '', ids: null };
+async function fileSampleHash(f) {
+  try {
+    const buf = new Uint8Array(await f.slice(0, 8192).arrayBuffer());
+    let h = 5381;
+    for (let i = 0; i < buf.length; i++) h = ((h << 5) + h + buf[i]) | 0;
+    return (h >>> 0).toString(36);
+  } catch (e) { return '0'; }
+}
+async function currentFilesFingerprintIds() {
+  if (!uploadedFiles.some(f => f.type === 'application/pdf')) return null;
+  const memoKey = uploadedFiles.map(f => f.name + ':' + f.size).join('|');
+  if (fpMemo.ids && fpMemo.key === memoKey) return fpMemo.ids;
+  const pages = await countUploadedPdfPages();
+  const legacyKey = memoKey + '#' + pages;
+  const samples = [];
+  for (const f of uploadedFiles) samples.push(await fileSampleHash(f));
+  const ids = {
+    id: 'pool_' + poolHashStr(legacyKey + '~' + samples.join('.')),
+    legacyId: 'pool_' + poolHashStr(legacyKey)
+  };
+  fpMemo = { key: memoKey, ids };
+  return ids;
+}
+async function currentFilesFingerprint() {
+  const ids = await currentFilesFingerprintIds();
+  return ids ? ids.id : null;
+}
+// 現在のファイル構成に対応するプールを取得する（旧ID形式で保存されたプールは新IDへ移行）
+async function poolGetForCurrentFiles() {
+  const ids = await currentFilesFingerprintIds();
+  if (!ids) return null;
+  const pool = await poolGet(ids.id).catch(() => null);
+  if (pool) return pool;
+  const legacy = await poolGet(ids.legacyId).catch(() => null);
+  if (legacy) {
+    const oldId = legacy.id;
+    legacy.id = ids.id;
+    try { await poolPut(legacy); try { await poolDelete(oldId); } catch (e2) {} }
+    catch (e) { legacy.id = oldId; } // 移行に失敗しても旧IDのまま使えれば良い（次回また試す）
+    return legacy;
+  }
+  return null;
+}
+// 判別しやすい既定名（ファイル名＋作成日）
+function defaultPoolName(files) {
+  const pdf = files.find(f => f.type === 'application/pdf') || files[0];
+  let base = pdf ? pdf.name.replace(/\.[^.]+$/, '') : '教材';
+  if (files.length > 1) base += ' ほか';
+  const d = new Date();
+  return base + '（' + (d.getMonth() + 1) + '/' + d.getDate() + ' 作成）';
+}
+// 出題に使う現在の設定（プール出題は q-count 等の入力欄を尊重）
+function poolServeSettings() {
+  const g = id => document.getElementById(id);
+  return {
+    qCount: Math.min(20, Math.max(1, parseInt(g('q-count') && g('q-count').value) || 5)),
+    difficulty: (g('difficulty') && g('difficulty').value) || 'medium',
+    answerFormat: (g('answer-format') && g('answer-format').value) || 'mixed',
+    choiceCount: parseInt(g('choice-count') && g('choice-count').value) || 4,
+    orderMode: (g('order-mode') && g('order-mode').value) || 'random',
+    focus: (g('focus') && g('focus').value) || 'balanced'
+  };
+}
+
+// ── プールから出題分を取り出す（ローテーションで毎回ちがう問題を出す） ──
+// wantFormat（任意）：'mixed' 以外が指定され、プール内に該当形式があれば、その形式だけから
+// シャッフルして出題する（形式指定時はローテーションではなく毎回ランダム抽出）。
+function poolTakeSubset(pool, n, wantFormat) {
+  const total = pool.questions.length;
+  n = Math.min(n, total);
+  if (wantFormat && wantFormat !== 'mixed') {
+    const idxs = [];
+    pool.questions.forEach((q, i) => { if (q.type === wantFormat) idxs.push(i); });
+    if (idxs.length) {
+      const sh = poolShuffledIndices(idxs.length);
+      const picked = [];
+      for (let k = 0; k < Math.min(n, idxs.length); k++) picked.push(pool.questions[idxs[sh[k]]]);
+      return JSON.parse(JSON.stringify(picked));
+    }
+    // 該当形式が1問も無ければ従来どおり全体ローテーションへフォールバック（呼び出し側で通知）
+  }
+  if (!Array.isArray(pool.order) || pool.order.length !== total) { pool.order = poolShuffledIndices(total); pool.cursor = 0; }
+  if (typeof pool.cursor !== 'number' || pool.cursor < 0) pool.cursor = 0;
+  const picked = [];
+  for (let k = 0; k < n; k++) {
+    if (pool.cursor >= total) { pool.order = poolShuffledIndices(total); pool.cursor = 0; } // 一巡したら混ぜ直す
+    picked.push(pool.questions[pool.order[pool.cursor]]);
+    pool.cursor++;
+  }
+  return JSON.parse(JSON.stringify(picked)); // 元データを壊さないよう複製して渡す
+}
+
+// プールの元ファイルを uploadedFiles に復元（図の切り出し・出典表示のため）
+async function restorePoolFiles(pool) {
+  try {
+    if (Array.isArray(pool.files) && pool.files.length) {
+      uploadedFiles = pool.files.map(r => new File([r.blob], r.name, { type: r.type }));
+      clearFigureCaches();
+      renderFileList();
+    }
+  } catch (e) {}
+}
+
+// プールから（API不要・無料で）出題を開始する
+async function serveFromPool(pool, settings) {
+  if (!pool.questions || !pool.questions.length) { alert('この問題プールは空です。'); return; }
+  closeDataModal(); // データ管理ハブから出題した場合はハブを閉じる（クイズ画面をふさがない）
+  const s = settings || poolServeSettings();
+  await restorePoolFiles(pool);
+  // 画面で選んだ「回答形式」を尊重する（プールに該当形式が無いときだけミックスへフォールバック＋通知）
+  let wantFormat = s.answerFormat || 'mixed';
+  if (wantFormat !== 'mixed' && !pool.questions.some(q => q.type === wantFormat)) {
+    alert('このプールには「' + (FORMAT_LABEL[wantFormat] || wantFormat) + '」形式の問題が無いため、ミックスで出題します。');
+    wantFormat = 'mixed';
+  }
+  const subset = poolTakeSubset(pool, s.qCount || 5, wantFormat);
+  await poolSaveGuarded(pool); // cursor を保存（次回はちがう問題から）
+  startQuizFromQuestions(subset, {
+    difficulty: s.difficulty || (pool.settings && pool.settings.difficulty) || 'medium',
+    answerFormat: wantFormat,
+    choiceCount: (pool.settings && pool.settings.choiceCount) || s.choiceCount,
+    orderMode: s.orderMode, focus: s.focus, fromSaved: true, poolId: pool.id,
+    modeConfirmed: !!s.modeConfirmed // 生成ボタン経由（maybeHandlePoolFlow）だけ試験モード確認を飛ばす
+  }, 'normal');
+}
+
+// startQuiz から呼ばれる分岐。プール方式で処理したら true（＝通常生成を行わない）
+async function maybeHandlePoolFlow(settings) {
+  if (IS_WIDGET) return false;
+  if (!uploadedFiles.some(f => f.type === 'application/pdf')) return false;
+
+  const existing = await poolGetForCurrentFiles().catch(() => null); // 旧IDのプールも自動移行して拾う
+
+  // 2回目以降：このファイルの無料プールがある → プールから出題を提案
+  if (existing && existing.questions && existing.questions.length) {
+    const ok = confirm(
+      `このファイルの問題プール「${existing.name}」があります（全${existing.questions.length}問${existing.status === 'building' ? '・作成中' : ''}）。\n\n` +
+      'APIを使わず無料でプールから出題しますか？\n\n' +
+      '「キャンセル」を選ぶと、AIで新しく生成します（有料）。'
+    );
+    // 生成ボタンから来た＝モード選択は画面で確認済みなので、試験モードの再確認は不要
+    if (ok) { await serveFromPool(existing, Object.assign({}, settings, { modeConfirmed: true })); return true; }
+    return false; // 新規生成を選択 → 通常フローへ
+  }
+
+  // 新規：ページ数がしきい値超なら大量プールをまとめて作る
+  const pages = await countUploadedPdfPages();
+  if (pages > POOL_PAGE_THRESHOLD) {
+    if (!settings.apiKey) return false; // キーが無ければ通常フロー側のエラー表示に任せる
+    const ok = confirm(
+      `このPDFは${pages}ページと大きめです。\n\n` +
+      `初回だけAIで「問題プール（目標 約${POOL_TARGET}問）」をまとめて作成し、以降はAPIを使わず無料でくり返し出題できるようにしますか？\n\n` +
+      '・作成はバックグラウンドで進みます（最初のまとまりができ次第クイズを開始）。\n' +
+      '・複数回のAI生成を行うため、単発生成より費用がかかります。\n\n' +
+      `「キャンセル」を選ぶと、今回だけの通常生成（${settings.qCount}問）になります。`
+    );
+    if (ok) { await startPoolBuildAndQuiz(settings); return true; }
+  }
+  return false;
+}
+
+// AI生成1バッチ分をプールに追加（既出と重複しないよう重点を変えつつ重複除去）
+async function poolGenerateOneBatch(pool, settings, files, batchIndex) {
+  const focusRotation = ['balanced', 'definitions', 'concepts', 'application'];
+  const batchSize = Math.min(POOL_BATCH, POOL_TARGET - pool.questions.length);
+  if (batchSize <= 0) return;
+  const s = Object.assign({}, settings, {
+    qCount: Math.max(1, batchSize),
+    focus: focusRotation[batchIndex % focusRotation.length],
+    extra: (settings.extra ? settings.extra + '\n' : '') +
+      '既に作成済みの問題と内容が重複しない、新規の問題のみを作成してください。教材全体からまんべんなく出題してください。'
+  });
+  const qs = await generateQuestions(s, null, files, { cachePdf: true });
+  const seen = new Set(pool.questions.map(q => poolNormQ(q.question)));
+  for (const q of qs) {
+    const k = poolNormQ(q.question);
+    if (k && !seen.has(k)) { seen.add(k); pool.questions.push(q); }
+  }
+  pool.updatedAt = Date.now();
+}
+
+// 初回：最初のバッチを作ってすぐ出題を開始し、残りはバックグラウンドで作り続ける
+async function startPoolBuildAndQuiz(settings) {
+  if (poolBuildActive) { alert('問題プールを作成中です。完了までお待ちください。'); return; }
+  if (!preGenerateGuard(settings, { confirmCost: false })) return; // サイズ・二重実行チェック
+
+  const fp = await currentFilesFingerprint();
+  const filesSnapshot = uploadedFiles.slice(); // 作成中にファイルが変わっても固定
+  const pool = {
+    id: fp, name: defaultPoolName(filesSnapshot),
+    createdAt: Date.now(), updatedAt: Date.now(),
+    fileMeta: filesSnapshot.map(f => ({ name: f.name, type: f.type, size: f.size })),
+    files: filesSnapshot.map(f => ({ name: f.name, type: f.type, blob: f })), // 図・出典復元用
+    settings: { difficulty: settings.difficulty, answerFormat: settings.answerFormat, choiceCount: settings.choiceCount, focus: settings.focus },
+    questions: [], order: [], cursor: 0, target: POOL_TARGET, status: 'building'
+  };
+  // 空のプールをここで先に保存すると、初回バッチ失敗やタブ閉じで「0問」の幽霊プールが残る。
+  // 保存は最初のバッチで問題ができてから（下）行う。
+
+  poolBuildActive = true;
+  isGenerating = true; setStartBtnBusy(true);
+  showScreen('screen-loading');
+  setLoadingMsg('問題プールを作成中', '最初のまとまりを生成しています…（初回のみ）');
+
+  // 1) 最初のバッチを生成 → できたらすぐ出題
+  try {
+    await poolGenerateOneBatch(pool, settings, filesSnapshot, 0);
+    await poolSaveGuarded(pool);
+  } catch (e) {
+    poolBuildActive = false; isGenerating = false; setStartBtnBusy(false);
+    console.error(e);
+    alert('問題プールの作成に失敗しました: ' + (e && e.message ? e.message : e));
+    showScreen('screen-upload');
+    return;
+  }
+  isGenerating = false; setStartBtnBusy(false);
+
+  if (pool.questions.length > 0) {
+    const subset = poolTakeSubset(pool, settings.qCount);
+    await poolSaveGuarded(pool);
+    startQuizFromQuestions(subset, {
+      difficulty: settings.difficulty, answerFormat: settings.answerFormat,
+      choiceCount: settings.choiceCount, orderMode: settings.orderMode, focus: settings.focus,
+      fromSaved: true, poolId: pool.id,
+      modeConfirmed: true // 生成ボタン経由＝モード選択は画面で確認済み。試験モードの再確認は不要
+    }, 'normal');
+  } else {
+    showScreen('screen-upload');
+  }
+
+  // 2) 残りをバックグラウンドで作り続ける（await しない＝学習を妨げない）
+  continuePoolBuild(pool, settings, filesSnapshot);
+}
+
+// 目標問数に達するまでバッチ生成を繰り返す（進捗を上部に表示）
+async function continuePoolBuild(pool, settings, files) {
+  let batchIndex = 1; // 0 は最初に実行済み
+  try {
+    while (pool.questions.length < pool.target && batchIndex < POOL_MAX_BATCHES) {
+      showPoolProgress(pool);
+      const before = pool.questions.length;
+      try { await poolGenerateOneBatch(pool, settings, files, batchIndex); }
+      catch (e) { console.warn('[AIQuiz] プールのバッチ生成に失敗', e); break; }
+      await poolSaveMerge(pool).catch(() => {});
+      refreshPoolUI();
+      batchIndex++;
+      if (pool.questions.length <= before) break; // 重複ばかりで増えない → 打ち切り
+    }
+  } finally {
+    poolBuildActive = false;
+    if (!pool.questions.length) {
+      // 1問も作れなかった（全バッチ失敗など）→ 「0問」の幽霊プールを残さず削除
+      await poolDelete(pool.id).catch(() => {});
+      hidePoolProgress();
+    } else {
+      pool.status = 'ready'; pool.updatedAt = Date.now();
+      await poolSaveMerge(pool).catch(() => {});
+      poolDoneToast(pool);
+    }
+    refreshPoolUI();
+  }
+}
+
+// ── 進捗トースト（上部・非ブロッキング） ──
+function showPoolProgress(pool) {
+  const el = document.getElementById('pool-progress');
+  if (!el) return;
+  const n = pool.questions ? pool.questions.length : 0;
+  const t = el.querySelector('#pool-progress-text');
+  if (t) t.textContent = `問題プール作成中… ${n}/${pool.target}問（このまま学習を続けられます）`;
+  clearTimeout(poolToastTimer);
+  el.style.opacity = '1'; el.style.pointerEvents = 'auto';
+}
+function hidePoolProgress() {
+  const el = document.getElementById('pool-progress');
+  if (!el) return;
+  el.style.opacity = '0'; el.style.pointerEvents = 'none';
+}
+function poolDoneToast(pool) {
+  const el = document.getElementById('pool-progress');
+  if (!el) return;
+  const n = pool.questions ? pool.questions.length : 0;
+  const t = el.querySelector('#pool-progress-text');
+  if (t) t.textContent = `✅ 問題プール「${pool.name}」完成：${n}問。次回から無料で出題できます。`;
+  el.style.opacity = '1'; el.style.pointerEvents = 'auto';
+  clearTimeout(poolToastTimer);
+  poolToastTimer = setTimeout(hidePoolProgress, 8000);
+}
+
+// ── アップロード画面のプールUI（バナー＋一覧）を最新化 ──
+async function refreshPoolUI() {
+  try { await refreshPoolBanner(); } catch (e) {}
+  try { await refreshPoolLibrary(); } catch (e) {}
+}
+// 今アップロード中のファイルに一致する無料プールがあればバナー表示
+async function refreshPoolBanner() {
+  const banner = document.getElementById('pool-banner');
+  if (!banner) return;
+  const pool = await poolGetForCurrentFiles().catch(() => null); // 旧IDのプールも自動移行して拾う
+  if (pool && pool.questions && pool.questions.length) {
+    document.getElementById('pool-banner-text').textContent =
+      `このファイルの無料プール「${pool.name}」があります（全${pool.questions.length}問${pool.status === 'building' ? '・作成中' : ''}）。APIを使わず出題できます。`;
+    banner.dataset.poolId = pool.id;
+    banner.style.display = 'flex';
+  } else {
+    banner.removeAttribute('data-pool-id');
+    banner.style.display = 'none';
+  }
+}
+// プール1件の表示HTML（アップロード画面の一覧とデータ管理ハブで共用）
+function poolItemHtml(p) {
+  const files = escapeHtml((p.fileMeta || []).map(f => f.name).join('、'));
+  return `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--surface2); border:1px solid var(--border2); border-radius:10px; padding:10px 12px;">
+    <div style="flex:1; min-width:160px;">
+      <div style="font-weight:600;">${escapeHtml(p.name)}</div>
+      <div style="font-size:11px; color:var(--text3); margin-top:2px;">${p.questions ? p.questions.length : 0}問 ／ ${files}${p.status === 'building' ? ' ・作成中…' : ''}</div>
+    </div>
+    <button class="btn-primary" style="padding:6px 12px; font-size:12px;" onclick="servePool('${p.id}')">▶ 出題（無料）</button>
+    <button class="btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="renamePool('${p.id}')">名前変更</button>
+    <button class="btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="deletePool('${p.id}')">削除</button>
+  </div>`;
+}
+
+// 保存済みプールの一覧を表示（アップロード画面の details ＋ 開いていればデータ管理ハブも同期）
+async function refreshPoolLibrary() {
+  const pools = (await poolList()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const wrap = document.getElementById('pool-library');
+  const list = document.getElementById('pool-library-list');
+  if (wrap && list) {
+    if (!pools.length) { wrap.style.display = 'none'; list.innerHTML = ''; }
+    else { wrap.style.display = 'block'; list.innerHTML = pools.map(poolItemHtml).join(''); }
+  }
+  const modal = document.getElementById('data-modal');
+  const hubList = document.getElementById('data-pool-list');
+  if (hubList && modal && modal.classList.contains('show')) {
+    hubList.innerHTML = pools.length ? pools.map(poolItemHtml).join('') : '<div style="font-size:12px; color:var(--text3);">まだ問題プールはありません。</div>';
+  }
+}
+
+// バナー／一覧から呼ばれる操作
+async function servePoolFromBanner() {
+  const banner = document.getElementById('pool-banner');
+  const id = banner && banner.dataset.poolId;
+  if (id) servePool(id);
+}
+async function servePool(id) {
+  const pool = await poolGet(id).catch(() => null);
+  if (!pool) { alert('この問題プールが見つかりませんでした。'); return; }
+  await serveFromPool(pool, poolServeSettings());
+}
+async function renamePool(id) {
+  const pool = await poolGet(id).catch(() => null);
+  if (!pool) return;
+  const name = prompt('問題プールの名前を変更', pool.name);
+  if (name === null) return;
+  pool.name = name.trim() || pool.name;
+  pool.updatedAt = Date.now();
+  await poolPut(pool).catch(() => {});
+  refreshPoolUI();
+}
+async function deletePool(id) {
+  if (!confirm('この問題プールを削除しますか？（元に戻せません）')) return;
+  await poolDelete(id).catch(() => {});
+  refreshPoolUI();
+}
+
+// ─── DATA MANAGEMENT HUB / BACKUP (データ管理ハブ・全体バックアップ) ──
+// 方針：localStorage / IndexedDB は「ブラウザ内ストレージ」で本体フォルダには出せない。
+//   そこで“総括”は (1) アプリ内の1画面（このハブ）にまとめる、(2) 全データを1ファイルに書き出す、で実現する。
+//   バックアップには APIキーを含めない（漏洩防止）。図・出典の再利用のため、プール内のPDF等はbase64で同梱する。
+function openDataModal() { const m = document.getElementById('data-modal'); if (m) m.classList.add('show'); refreshDataModal(); }
+function closeDataModal() { const m = document.getElementById('data-modal'); if (m) m.classList.remove('show'); }
+
+// ハブ内の状態表示を更新
+async function refreshDataModal() {
+  let hasKey = false; try { hasKey = !!localStorage.getItem('aiquiz_api_key'); } catch (e) {}
+  const keyEl = document.getElementById('data-key-status');
+  if (keyEl) keyEl.textContent = hasKey ? '✓ 設定済み（このブラウザに保存）' : '未設定';
+
+  const expBtn = document.getElementById('data-export-set-btn');
+  if (expBtn) expBtn.disabled = !(questions && questions.length);
+
+  const cnt = k => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); if (Array.isArray(v)) return v.length; if (v && typeof v === 'object') return Object.keys(v).length; return 0; } catch (e) { return 0; } };
+  const ld = document.getElementById('data-learn-status');
+  if (ld) ld.textContent = `学習履歴 ${cnt('aiquiz_history')}件 ／ 苦手 ${cnt('aiquiz_srs')}件 ／ 試験 ${cnt('aiquiz_exams')}件`;
+
+  const pools = (await poolList().catch(() => [])).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const hubList = document.getElementById('data-pool-list');
+  if (hubList) hubList.innerHTML = pools.length ? pools.map(poolItemHtml).join('') : '<div style="font-size:12px; color:var(--text3);">まだ問題プールはありません。</div>';
+  const pdfCount = pools.reduce((s, p) => s + (p.fileMeta || []).filter(f => f.type === 'application/pdf').length, 0);
+  const pdfEl = document.getElementById('data-pdf-status');
+  if (pdfEl) pdfEl.textContent = `問題プール ${pools.length}個 の中に PDF ${pdfCount}件を保存中（再利用時の図・出典表示用）`;
+  const stEl = document.getElementById('data-storage-status');
+  if (stEl) {
+    const est = await storageEstimate();
+    const nearFull = storageFull || est.ratio >= 0.9; // 容量オーバー検知済み、または使用率9割超で警告
+    stEl.textContent = est.text + (nearFull ? '　⚠ 容量が上限に近づいています。不要なプールを削除するか、バックアップ後に削除してください。' : '');
+    stEl.style.color = nearFull ? 'var(--red)' : 'var(--text3)';
+  }
+}
+
+// 保存済みAPIキーを削除
+function deleteApiKey() {
+  if (!confirm('保存したAPIキーをこのブラウザから削除しますか？')) return;
+  try { localStorage.removeItem('aiquiz_api_key'); } catch (e) {}
+  const inp = document.getElementById('api-key'); if (inp) inp.value = '';
+  try { expandApiKey(); } catch (e) {}
+  refreshDataModal();
+}
+
+// おおよそのブラウザ保存容量（text＋使用率ratioを返す。ratioで表示色を出し分ける）
+async function storageEstimate() {
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const e = await navigator.storage.estimate();
+      const usage = e.usage || 0, quota = e.quota || 0;
+      const mb = x => (x / 1048576).toFixed(1);
+      return { text: `このアプリの推定使用容量：${mb(usage)}MB（ブラウザ上限の目安：約${mb(quota)}MB）`, ratio: quota ? usage / quota : 0 };
+    }
+  } catch (e) {}
+  return { text: '容量情報は取得できません。', ratio: 0 };
+}
+
+// Blob ⇄ base64（JSONに図・出典用PDFを同梱するため）
+function blobToB64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res((r.result.split(',')[1]) || '');
+    r.onerror = () => rej(new Error('ファイルの読み込みに失敗しました'));
+    r.readAsDataURL(blob);
+  });
+}
+function b64ToBlob(b64, type) {
+  const bin = atob(b64 || '');
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: type || 'application/octet-stream' });
+}
+
+// バックアップに含める localStorage キー（APIキーは意図的に除外）
+const BACKUP_LOCAL_KEYS = ['aiquiz_history', 'aiquiz_srs', 'aiquiz_exams', 'aiquiz_aieq', 'aiquiz_strict', 'aiquiz_beta_draw', 'aiquiz_beta_graph', 'aiquiz_agreed'];
+
+// 全データを1ファイルに書き出す（問題プールのPDFはbase64で同梱・キーは含めない）
+async function exportBackup() {
+  try {
+    const pools = await poolList().catch(() => []);
+    const poolsOut = [];
+    for (const p of pools) {
+      const rec = Object.assign({}, p);
+      const filesB64 = [];
+      for (const f of (p.files || [])) {
+        try { filesB64.push({ name: f.name, type: f.type, dataB64: await blobToB64(f.blob) }); } catch (e) {}
+      }
+      delete rec.files;
+      rec.filesB64 = filesB64;
+      poolsOut.push(rec);
+    }
+    const local = {};
+    BACKUP_LOCAL_KEYS.forEach(k => { try { const v = localStorage.getItem(k); if (v !== null) local[k] = v; } catch (e) {} });
+    const payload = { app: 'AIQuiz', type: 'backup', version: 'v5', exportedAt: new Date().toISOString(), local, pools: poolsOut };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date(); const p = n => String(n).padStart(2, '0');
+    a.href = url;
+    a.download = `AIQuiz_バックアップ_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    alert('バックアップの書き出しに失敗しました: ' + (e && e.message ? e.message : e));
+  }
+}
+
+// バックアップファイルから復元（プール追加＋学習/設定を上書き。キーは触らない）→ 再読み込みで全反映
+async function importBackupFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { alert('読み込めませんでした（JSON形式ではありません）。'); return; }
+  if (!data || data.type !== 'backup') {
+    if (!confirm('AIQuizのバックアップ形式として認識できませんでした。それでも復元を試みますか？')) return;
+  }
+  if (!confirm('バックアップから復元します。\n\n・問題プールを追加します（同じIDは上書き）\n・学習履歴・苦手・試験・設定を上書きします\n・APIキーは含まれないため変更されません\n\n続けますか？')) return;
+  let poolN = 0;
+  try {
+    for (const p of (data.pools || [])) {
+      const rec = Object.assign({}, p);
+      const filesB64 = rec.filesB64 || [];
+      delete rec.filesB64;
+      rec.files = filesB64.map(f => ({ name: f.name, type: f.type, blob: new File([b64ToBlob(f.dataB64, f.type)], f.name, { type: f.type }) }));
+      await poolSaveGuarded(rec);
+      poolN++;
+    }
+    if (data.local) {
+      Object.keys(data.local).forEach(k => { if (k === 'aiquiz_api_key') return; try { localStorage.setItem(k, data.local[k]); } catch (e) {} });
+    }
+  } catch (e) {
+    alert('復元中にエラーが発生しました: ' + (e && e.message ? e.message : e));
+    return;
+  }
+  alert(`復元しました（問題プール ${poolN}個）。設定を反映するためページを再読み込みします。`);
+  location.reload();
 }
 
 // ─── PRINT / PDF (印刷・PDF保存) ───────────────────────────────
@@ -5152,9 +6389,11 @@ function printQuestions(includeAnswers, qsArg, titleArg) {
       qhtml = '<div class="pq-q">' + m(q.question) + '</div><div class="pn">分類：' + q.categories.map(m).join(' ／ ') + '</div><ul class="pi">' +
         q.items.map(it => '<li>' + m(it) + '：（　　　　　）</li>').join('') + '</ul>';
     } else if (q.type === 'order') {
-      const shuffled = q.items.map((it, idx) => ({ it, idx })).sort(() => Math.random() - 0.5);
+      // 画面表示（renderOrderQuestion）と同じ基準：偏りのないシャッフル＋偶然正解順のまま印刷される事故を回避
+      let items = shuffleArray(q.items);
+      if (q.items.length > 1 && items.every((v, i) => v === q.items[i])) items.push(items.shift());
       qhtml = '<div class="pq-q">' + m(q.question) + '</div><ul class="pi">' +
-        shuffled.map(o => '<li>（　）　' + m(o.it) + '</li>').join('') + '</ul>';
+        items.map(it => '<li>（　）　' + m(it) + '</li>').join('') + '</ul>';
     } else if (q.type === 'fill') {
       // 数式の外は記入欄、数式の中（行列など）は空の箱にして、数式を壊さず印刷する
       qhtml = '<div class="pq-q">' + m(fillQuestionTextWith(q, (idx, inMath) => inMath ? '\\boxed{\\phantom{00}}' : '（　　　　　）')) + '</div>';
@@ -5228,12 +6467,18 @@ function clearHistory() {
 }
 
 function openDashboard() {
+  // 試験の実施中に画面を切り替えると showScreen がタイマーを止め、試験画面へ戻る手段も
+  // 無いため（回答・問題セットが失われる）、実施中はダッシュボードを開かせない。
+  if (examActive) {
+    alert('試験モードの実施中は学習履歴を開けません。\n先に「採点する（提出）」または「中断」を押してください。');
+    return;
+  }
   renderDashboard();
   showScreen('screen-dashboard');
 }
 
-const KIND_LABEL = { normal: '通常', retake: '再挑戦', similar: '類似問題' };
-const FORMAT_LABEL = { mixed: 'ミックス', choice: '選択', sort: '仕分け', order: '並べ替え', fill: '穴埋め', table: '表穴埋め', text: '記述' };
+const KIND_LABEL = { normal: '通常', retake: '再挑戦', similar: '類似問題', exam: '試験', srs: '苦手復習' };
+const FORMAT_LABEL = { mixed: 'ミックス', choice: '選択', sort: '仕分け', order: '並べ替え', fill: '穴埋め', table: '表穴埋め', text: '記述', draw: '描画(β)', graph: 'グラフ(β)' };
 
 function formatDate(iso) {
   try {
@@ -5565,6 +6810,7 @@ loadStrictSetting(); // 採点の厳密さ設定を復元
 loadBetaSettings();  // β機能（自由描画／格子点グラフ）のON/OFF設定を復元
 checkResume(); // 中断中のクイズがあれば再開バナーを表示
 checkSRS();    // 苦手問題の復習バナーを表示
+reconcileStalePools().then(refreshPoolUI); // 中断で作成中のまま残ったプールを正常化してから一覧・バナー表示
 initCustomDropdowns(); // <select>をアニメ付きカスタムドロップダウンに置換（設定復元後に実行しラベルを同期）
 
 // ─── ホーム画面に追加（アイコン） ─────────────────────────────
