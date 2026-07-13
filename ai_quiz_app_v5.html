@@ -6275,9 +6275,9 @@ async function deletePool(id) {
   refreshPoolUI();
 }
 
-// ファイル名に使えない文字（\ / : * ? " < > | と制御文字）を置換し、長すぎる名前は切る。
+// ファイル名に使えない文字（\ / : * ? " < > |）を「_」に置換し、空白を整え、長すぎる名前は切る。
 function sanitizeFileName(s) {
-  let out = String(s == null ? '' : s).replace(/[\\/:*?"<>| -]/g, '_').replace(/\s+/g, ' ').trim();
+  let out = String(s == null ? '' : s).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
   return (out || '無題').slice(0, 60);
 }
 
