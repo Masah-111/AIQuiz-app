@@ -1115,18 +1115,19 @@
 
     <div class="section-divider" id="setup-divider"></div>
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <label class="btn-secondary" style="cursor:pointer; display:inline-flex; align-items:center;">
-        保存した問題を読み込む
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <label class="btn-secondary" style="cursor:pointer; display:inline-flex; align-items:center;"
+        title="問題セット・問題プール・バックアップのいずれのファイルでも、種類を自動判別して読み込みます">
+        📂 ファイルから読み込む
         <input type="file" id="import-input" accept=".json,application/json" style="display:none">
       </label>
-      <button class="btn-secondary" id="load-pool-btn" onclick="openPoolLibrary()" title="このブラウザに保存した問題プールから、APIを使わず無料で出題します">問題プールから読み込む</button>
+      <span style="font-size:11px; color:var(--text3); line-height:1.5;">問題セット・プール・バックアップに対応（自動判別）</span>
     </div>
 
     <details class="guide-box" id="pool-library" style="display:none;">
-      <summary>保存した問題プール（無料で出題）</summary>
+      <summary>保存済みの問題プール（無料で出題）</summary>
       <div class="guide-body">
-        <div style="font-size:12px; color:var(--text3); margin-bottom:8px; line-height:1.6;">大きめPDFから作成した問題プールです。APIを使わず何度でも無料で出題できます（毎回ちがう問題を出します）。プールごとに名前を付けて整理できます。</div>
+        <div style="font-size:12px; color:var(--text3); margin-bottom:8px; line-height:1.6;">このブラウザに保存した問題プールです。APIを使わず何度でも無料で出題できます（毎回ちがう問題を出します）。名前変更・削除・ファイルへの書き出しができます。</div>
         <div id="pool-library-list" style="display:flex; flex-direction:column; gap:8px;"></div>
       </div>
     </details>
@@ -1184,8 +1185,9 @@
     </button>
 
     <details class="guide-box">
-      <summary>詳細設定（追加指示・選択肢の数・出題の重点・出題順序）</summary>
+      <summary>詳細設定（出題の詳細・採点の設定）</summary>
       <div class="guide-body">
+        <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px;">出題の詳細</div>
         <div class="prompt-area" style="margin-top:0;">
           <label>追加指示（任意）</label>
           <textarea id="extra-prompt" placeholder="例：「第3章の微分だけ出題して」「英語で出題して」「中学生向けにやさしく」など"></textarea>
@@ -1229,40 +1231,37 @@
             </select>
           </div>
         </div>
-      </div>
-    </details>
 
-    <details class="guide-box">
-      <summary>採点の設定（別解判定・厳密さ）</summary>
-      <div class="guide-body">
-      <div class="setting-row">
-        <div>
-          <label style="text-transform:none; letter-spacing:0; margin-bottom:4px;">AIによる別解判定（同値判定）</label>
-          <div style="font-size:12px; color:var(--text2); line-height:1.55;">
-            穴埋め・表で文字列が一致しない時、AIが「同じ意味か」を判定して正解にします。
-            <button type="button" class="figure-link" onclick="showAiEqInfo()">特徴を見る</button>
+        <div style="border-top:1px solid var(--border2); margin:18px 0 12px;"></div>
+        <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px;">採点の設定</div>
+        <div class="setting-row">
+          <div>
+            <label style="text-transform:none; letter-spacing:0; margin-bottom:4px;">AIによる別解判定（同値判定）</label>
+            <div style="font-size:12px; color:var(--text2); line-height:1.55;">
+              穴埋め・表で文字列が一致しない時、AIが「同じ意味か」を判定して正解にします。
+              <button type="button" class="figure-link" onclick="showAiEqInfo()">特徴を見る</button>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="sr-state" id="aieq-state"></span>
+            <label class="switch">
+              <input type="checkbox" id="aieq-toggle" onchange="onAiEqToggle(this.checked)">
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span class="sr-state" id="aieq-state"></span>
-          <label class="switch">
-            <input type="checkbox" id="aieq-toggle" onchange="onAiEqToggle(this.checked)">
-            <span class="slider"></span>
-          </label>
+        <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px;">
+          <label style="text-transform:none; letter-spacing:0; margin-bottom:6px;">採点の厳密さ（語学向け）</label>
+          <select id="grade-strict" onchange="onStrictModeChange(this.value)"
+            style="width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:8px 12px; font-size:14px; font-family:inherit; outline:none;">
+            <option value="auto">自動（語学などはAIが厳密に判定）</option>
+            <option value="strict">常に厳密（大文字小文字・スペースを区別）</option>
+            <option value="lenient">常に通常（表記の揺れを吸収）</option>
+          </select>
+          <div style="font-size:12px; color:var(--text2); margin-top:6px; line-height:1.5;">
+            「厳密」にすると、穴埋め・表で<b>大文字小文字や語間スペースの違い</b>を不正解として検出します（綴り・大小文字を学ぶ語学向け）。数式・用語には「通常」「自動」が向きます。
+          </div>
         </div>
-      </div>
-      <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px;">
-        <label style="text-transform:none; letter-spacing:0; margin-bottom:6px;">採点の厳密さ（語学向け）</label>
-        <select id="grade-strict" onchange="onStrictModeChange(this.value)"
-          style="width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:8px 12px; font-size:14px; font-family:inherit; outline:none;">
-          <option value="auto">自動（語学などはAIが厳密に判定）</option>
-          <option value="strict">常に厳密（大文字小文字・スペースを区別）</option>
-          <option value="lenient">常に通常（表記の揺れを吸収）</option>
-        </select>
-        <div style="font-size:12px; color:var(--text2); margin-top:6px; line-height:1.5;">
-          「厳密」にすると、穴埋め・表で<b>大文字小文字や語間スペースの違い</b>を不正解として検出します（綴り・大小文字を学ぶ語学向け）。数式・用語には「通常」「自動」が向きます。
-        </div>
-      </div>
       </div>
     </details>
 
@@ -1887,6 +1886,14 @@ let genCount = 0;           // このセッションでの生成回数（コス�
 let quizKind = 'normal';    // 今のクイズの種別（normal / retake / similar）履歴記録用
 const MAX_UPLOAD_MB = 28;   // 1リクエストの合計アップロード上限の目安（APIは約32MB）
 
+// クイズ1回分の実行状態を初期化する。全エントリ（startQuiz/startExam/startQuizFromQuestions/
+// redoSameQuiz/retakeQuiz/startSimilarQuiz）から共通で呼ぶことで、グローバルの初期化漏れ
+// （＝機能の継ぎ目で起きやすい結合バグ）を防ぐ。currentDifficulty は各所で個別に設定する。
+function resetRunState() {
+  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  answered = false; activeMathInput = null;
+}
+
 // ─── FILE UPLOAD ───────────────────────────────────────────────
 const fileInput = document.getElementById('file-input');
 const uploadZone = document.getElementById('upload-zone');
@@ -2013,7 +2020,7 @@ async function startQuiz() {
   if (!preGenerateGuard(storedSettings, { confirmCost: true })) return;
 
   currentDifficulty = storedSettings.difficulty;
-  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  resetRunState();
 
   quizKind = 'normal';
   isGenerating = true;
@@ -4885,7 +4892,7 @@ function startExam() {
   // SRS復習（quizKind='srs'）はそのまま維持する。'exam' で上書きすると recordSRSFromResult が
   // 通常クイズ扱いになり、正解してもboxが昇格・卒業しない（＝復習が壊れる）ため。
   if (quizKind !== 'srs') quizKind = 'exam';
-  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  resetRunState();
   currentDifficulty = storedSettings.difficulty || 'medium';
   examOrderState = {};
   examSubmitted = false;
@@ -5502,7 +5509,7 @@ async function startSimilarQuiz() {
       newQs.sort((a, b) => (diffOrder[a.difficulty] ?? 1) - (diffOrder[b.difficulty] ?? 1));
     }
     questions = newQs;
-    currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+    resetRunState();
     currentDifficulty = storedSettings.difficulty;
     await persistResumeFiles(); // 再開時に図・出典を復元できるよう、元ファイルを一時保存
     document.getElementById('global-stats-bar').classList.add('visible');
@@ -5520,7 +5527,7 @@ async function startSimilarQuiz() {
 async function retakeQuiz() {
   if (!preGenerateGuard(storedSettings, { confirmCost: true })) return;
 
-  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  resetRunState();
   currentDifficulty = storedSettings.difficulty;
 
   quizKind = 'retake';
@@ -5588,7 +5595,7 @@ function startQuizFromQuestions(qs, settings, kind) {
   }
   storedSettings.mode = mode;
   storedSettings.examMinutes = parseInt((document.getElementById('exam-minutes') || {}).value) || 30;
-  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  resetRunState();
   currentDifficulty = storedSettings.difficulty;
   quizKind = kind || 'normal';
   enterQuiz(); // モード（通常/試験）に応じて出題を開始
@@ -5616,7 +5623,7 @@ function quitQuiz() {
 // 同じ問題をもう一度（再生成なし＝無料）
 function redoSameQuiz() {
   if (!questions || !questions.length) return;
-  currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
+  resetRunState();
   currentDifficulty = storedSettings.difficulty;
   enterQuiz(); // 通常/試験モードに応じてやり直す
 }
