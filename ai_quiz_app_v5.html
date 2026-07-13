@@ -5644,18 +5644,39 @@ function exportQuestions() {
 }
 
 // 保存した問題セット(JSON)を読み込んで開始（APIキー不要）
-function importQuestionsFile(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    let data;
-    try { data = JSON.parse(reader.result); } catch { alert('ファイルを読み込めませんでした（JSON形式ではありません）。'); return; }
-    let qs;
-    try { qs = normalizeQuestions(data && data.questions); }
-    catch { alert('この問題セットには有効な問題が含まれていません。'); return; }
-    startQuizFromQuestions(qs, data.settings || {}, 'normal');
-  };
-  reader.onerror = () => alert('ファイルの読み込みに失敗しました。');
-  reader.readAsText(file);
+// 「保存した問題を読み込む」：ファイル種別を自動判別して振り分ける。
+//  ・type:'pool'    → プールとして一覧に復元（＋今すぐ出題を確認）
+//  ・type:'backup'  → 全体復元（従来のバックアップ復元）
+//  ・それ以外       → 問題セットとしてクイズ開始（従来）
+async function importQuestionsFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { alert('ファイルを読み込めませんでした（JSON形式ではありません）。'); return; }
+
+  if (data && data.type === 'pool' && data.pool) { await importPoolFile(data.pool); return; }
+  if (data && data.type === 'backup') { await restoreBackupData(data); return; }
+
+  let qs;
+  try { qs = normalizeQuestions(data && data.questions); }
+  catch { alert('この問題セットには有効な問題が含まれていません。'); return; }
+  startQuizFromQuestions(qs, data.settings || {}, 'normal');
+}
+
+// プール単体ファイル（type:'pool'）を IndexedDB に復元し、一覧を更新。復元後に出題するか確認する。
+async function importPoolFile(poolExport) {
+  try {
+    const rec = poolRecordFromExport(poolExport);
+    if (!rec.id) rec.id = 'pool_' + poolHashStr(JSON.stringify(rec.fileMeta || rec.name || Date.now()));
+    if (rec.status === 'building') rec.status = 'ready'; // 作成中のまま書き出された保険
+    await poolSaveGuarded(rec);
+    refreshPoolUI();
+    const n = (rec.questions && rec.questions.length) || 0;
+    if (confirm(`問題プール「${rec.name}」（${n}問）を復元しました。\n\n今すぐこのプールから出題しますか？（「キャンセル」で一覧に戻ります）`)) {
+      await serveFromPool(rec);
+    }
+  } catch (e) {
+    alert('プールの復元に失敗しました: ' + (e && e.message ? e.message : e));
+  }
 }
 
 // ─── AUTOSAVE / RESUME (中断・再開) ────────────────────────────
@@ -6184,6 +6205,7 @@ function poolItemHtml(p) {
       <div style="font-size:11px; color:var(--text3); margin-top:2px;">${p.questions ? p.questions.length : 0}問 ／ ${files}${p.status === 'building' ? ' ・作成中…' : ''}</div>
     </div>
     <button class="btn-primary" style="padding:6px 12px; font-size:12px;" onclick="servePool('${p.id}')">▶ 出題（無料）</button>
+    <button class="btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="exportPool('${p.id}')" title="このプールを1つのJSONファイルとしてダウンロードに書き出します（PDF・図・出典も同梱）。事故対策・共有・引っ越しに。">書き出し</button>
     <button class="btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="renamePool('${p.id}')">名前変更</button>
     <button class="btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="deletePool('${p.id}')">削除</button>
   </div>`;
@@ -6244,6 +6266,39 @@ async function deletePool(id) {
   if (!confirm('この問題プールを削除しますか？（元に戻せません）')) return;
   await poolDelete(id).catch(() => {});
   refreshPoolUI();
+}
+
+// ファイル名に使えない文字（\ / : * ? " < > | と制御文字）を置換し、長すぎる名前は切る。
+function sanitizeFileName(s) {
+  let out = String(s == null ? '' : s).replace(/[\\/:*?"<>| -]/g, '_').replace(/\s+/g, ' ').trim();
+  return (out || '無題').slice(0, 60);
+}
+
+// プールを1個、Downloads へ JSON 書き出し（type:'pool'。PDF等は base64 同梱＝図・出典も復元可能）。
+// ブラウザ内(IndexedDB)だけだとサイトデータ削除で消えるため、実ファイルにして事故対策・共有・引っ越しを可能にする。
+async function exportPool(id) {
+  const pool = await poolGet(id).catch(() => null);
+  if (!pool) { alert('この問題プールが見つかりませんでした。'); return; }
+  try {
+    const rec = Object.assign({}, pool);
+    const filesB64 = [];
+    for (const f of (pool.files || [])) {
+      try { filesB64.push({ name: f.name, type: f.type, dataB64: await blobToB64(f.blob) }); } catch (e) {}
+    }
+    delete rec.files;
+    rec.filesB64 = filesB64;
+    const payload = { app: 'AIQuiz', type: 'pool', version: 'v5', exportedAt: new Date().toISOString(), pool: rec };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date(); const p = n => String(n).padStart(2, '0');
+    a.href = url;
+    a.download = 'AIQuiz_プール_' + sanitizeFileName(pool.name) + '_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    alert('プールの書き出しに失敗しました: ' + (e && e.message ? e.message : e));
+  }
 }
 
 // ─── DATA MANAGEMENT HUB / BACKUP (データ管理ハブ・全体バックアップ) ──
@@ -6353,11 +6408,19 @@ async function exportBackup() {
   }
 }
 
-// バックアップファイルから復元（プール追加＋学習/設定を上書き。キーは触らない）→ 再読み込みで全反映
-async function importBackupFile(file) {
-  let data;
-  try { data = JSON.parse(await file.text()); }
-  catch { alert('読み込めませんでした（JSON形式ではありません）。'); return; }
+// エクスポート形式のプールレコード（filesB64 同梱）を、保存用（files=Blob付き）へ復元する。
+// バックアップ復元・プール単体復元の両方で共用。
+function poolRecordFromExport(p) {
+  const rec = Object.assign({}, p);
+  const filesB64 = rec.filesB64 || [];
+  delete rec.filesB64;
+  delete rec.type; // エクスポート用の目印は保存レコードに残さない
+  rec.files = filesB64.map(f => ({ name: f.name, type: f.type, blob: new File([b64ToBlob(f.dataB64, f.type)], f.name, { type: f.type }) }));
+  return rec;
+}
+
+// バックアップデータ（parse済み）から復元（プール追加＋学習/設定を上書き。キーは触らない）→ 再読み込みで全反映
+async function restoreBackupData(data) {
   if (!data || data.type !== 'backup') {
     if (!confirm('AIQuizのバックアップ形式として認識できませんでした。それでも復元を試みますか？')) return;
   }
@@ -6365,11 +6428,7 @@ async function importBackupFile(file) {
   let poolN = 0;
   try {
     for (const p of (data.pools || [])) {
-      const rec = Object.assign({}, p);
-      const filesB64 = rec.filesB64 || [];
-      delete rec.filesB64;
-      rec.files = filesB64.map(f => ({ name: f.name, type: f.type, blob: new File([b64ToBlob(f.dataB64, f.type)], f.name, { type: f.type }) }));
-      await poolSaveGuarded(rec);
+      await poolSaveGuarded(poolRecordFromExport(p));
       poolN++;
     }
     if (data.local) {
@@ -6381,6 +6440,14 @@ async function importBackupFile(file) {
   }
   alert(`復元しました（問題プール ${poolN}個）。設定を反映するためページを再読み込みします。`);
   location.reload();
+}
+
+// バックアップファイルから復元（データ管理ハブの「バックアップから復元」用）
+async function importBackupFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { alert('読み込めませんでした（JSON形式ではありません）。'); return; }
+  await restoreBackupData(data);
 }
 
 // ─── PRINT / PDF (印刷・PDF保存) ───────────────────────────────
