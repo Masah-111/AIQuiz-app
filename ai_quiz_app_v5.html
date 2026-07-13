@@ -1115,11 +1115,12 @@
 
     <div class="section-divider" id="setup-divider"></div>
 
-    <div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
       <label class="btn-secondary" style="cursor:pointer; display:inline-flex; align-items:center;">
         保存した問題を読み込む
         <input type="file" id="import-input" accept=".json,application/json" style="display:none">
       </label>
+      <button class="btn-secondary" id="load-pool-btn" onclick="openPoolLibrary()" title="このブラウザに保存した問題プールから、APIを使わず無料で出題します">問題プールから読み込む</button>
     </div>
 
     <details class="guide-box" id="pool-library" style="display:none;">
@@ -6209,6 +6210,20 @@ async function servePoolFromBanner() {
   const banner = document.getElementById('pool-banner');
   const id = banner && banner.dataset.poolId;
   if (id) servePool(id);
+}
+// 「問題プールから読み込む」ボタン：保存済みプール一覧（#pool-library）を最新化して開き、そこへスクロール。
+// プールが無ければ、作成方法を案内する。
+async function openPoolLibrary() {
+  try { await refreshPoolLibrary(); } catch (e) {}
+  const wrap = document.getElementById('pool-library');
+  const list = document.getElementById('pool-library-list');
+  const hasPools = wrap && wrap.style.display !== 'none' && list && list.children.length > 0;
+  if (!hasPools) {
+    alert('まだ保存された問題プールがありません。\n\nページ数が多めのPDF（' + (POOL_PAGE_THRESHOLD + 1) + 'ページ以上）を読み込んで問題を生成すると「問題プール」を作成でき、以降はアップロードし直さず無料で何度でも出題できます。');
+    return;
+  }
+  wrap.open = true; // 一覧を開く（そのまま各プールの「出題（無料）」から選べる）
+  try { wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
 }
 async function servePool(id) {
   const pool = await poolGet(id).catch(() => null);
