@@ -3,7 +3,7 @@
 // 実行: npm test  （= node --test test/）
 const test = require('node:test');
 const assert = require('node:assert');
-const q = require('../js/questions.js');
+const q = require('./questions.js');
 
 // ── normalizeQuestions（構造の補正・破綻の除外） ──────────────
 test('normalizeQuestions: choice の正解インデックス範囲外は 0 に補正', () => {

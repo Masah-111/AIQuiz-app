@@ -3,7 +3,7 @@
 // 実行: npm test  （= node --test test/）
 const test = require('node:test');
 const assert = require('node:assert');
-const g = require('../js/grading.js');
+const g = require('./grading.js');
 
 // ── normalizeText（表記ゆれ吸収） ──────────────────────────────
 test('normalizeText: 全角英数→半角＋小文字化', () => {

@@ -54,20 +54,20 @@ SOFTWARE.
 ## pdf.js (bundled / 同梱)
 
 Used to render the cited page of uploaded PDFs (source view and figure cropping) and to
-count PDF pages. Bundled as `vendor/pdf.min.js` and `vendor/pdf.worker.min.js`, loaded
+count PDF pages. Bundled as `pdf.min.js` and `pdf.worker.min.js`, loaded
 lazily at runtime from the same origin — fully offline, no CDN.
 アップロードした PDF の該当ページ描画（出典表示・図の切り出し）とページ数カウントに使用。
-`vendor/pdf.min.js` と `vendor/pdf.worker.min.js` として**同梱**しています（実行時に同一オリジンから
+`pdf.min.js` と `pdf.worker.min.js` として**同梱**しています（実行時に同一オリジンから
 遅延読み込み・完全オフライン・CDN不使用）。
 
 Apache-2.0 requires that a copy of the license and attribution be retained when redistributing.
-The full license text is bundled at `vendor/pdf.js-LICENSE`.
-Apache-2.0 は再配布時にライセンス全文と帰属表示の保持を求めます。全文は `vendor/pdf.js-LICENSE`
+The full license text is bundled at `pdf.js-LICENSE`.
+Apache-2.0 は再配布時にライセンス全文と帰属表示の保持を求めます。全文は `pdf.js-LICENSE`
 として同梱しています。
 
 - Project: https://github.com/mozilla/pdf.js
 - Version: **3.11.174**
 - License: **Apache License 2.0**
 - Copyright (c) Mozilla Foundation and pdf.js contributors
-- Full text (bundled): `vendor/pdf.js-LICENSE`
+- Full text (bundled): `pdf.js-LICENSE`
 - Upstream: https://github.com/mozilla/pdf.js/blob/v3.11.174/LICENSE

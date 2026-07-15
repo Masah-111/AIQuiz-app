@@ -880,17 +880,17 @@ function clearFigureCaches() {
 
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
-// pdf.js を必要時にローカル同梱ファイル（vendor/）から遅延読み込み（オフライン・CDN非依存）。
-// 単一HTML完結は廃止し、pdf.js は vendor/ の実ファイルとして同梱する（HTMLの肥大化を避ける）。
+// pdf.js を必要時にローカル同梱ファイル（同じ階層）から遅延読み込み（オフライン・CDN非依存）。
+// 単一HTML完結は廃止し、pdf.js は同じ階層の実ファイルとして同梱する（HTMLの肥大化を避ける）。
 function ensurePdfJs() {
   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
   if (pdfjsLoading) return pdfjsLoading;
   pdfjsLoading = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'vendor/pdf.min.js';
+    s.src = 'pdf.min.js';
     s.onload = () => {
       try {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
       } catch {}
       resolve(window.pdfjsLib);
     };

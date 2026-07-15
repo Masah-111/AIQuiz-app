@@ -5,7 +5,7 @@
   "description": "教材からAIが問題を自動生成する学習アプリ（採点コアの単体テスト付き）",
   "license": "MIT",
   "scripts": {
-    "test": "node --test test/",
-    "check": "node --check js/grading.js && node --check js/questions.js && node --check js/app.js"
+    "test": "node --test",
+    "check": "node --check grading.js && node --check questions.js && node --check app.js"
   }
 }

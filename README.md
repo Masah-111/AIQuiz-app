@@ -1,6 +1,6 @@
 # AIQuiz / AI問題集メーカー
 
-教材（教科書・参考書の画像／PDF／貼り付けテキスト）を読み込ませると、**Claude API** が問題を自動生成し、出題・採点・復習・成績管理までしてくれる学習アプリです。フレームワーク不使用・素のJS、ビルド不要。`ai_quiz_app_v5.html` と `js/`・`vendor/` フォルダから成ります（**必ずフォルダごと**配置・配信してください）。
+教材（教科書・参考書の画像／PDF／貼り付けテキスト）を読み込ませると、**Claude API** が問題を自動生成し、出題・採点・復習・成績管理までしてくれる学習アプリです。フレームワーク不使用・素のJS、ビルド不要。全ファイルが同じ階層に並ぶフラット構成です（`ai_quiz_app_v5.html`／各 `.js`／`pdf.min.js`・`pdf.worker.min.js` 等）。**フォルダを作らず、全ファイルを同じ場所に**置いて配信してください。
 
 > ⚠️ 個人制作の学習補助ツールです。Anthropic 社をはじめとする企業の公式製品ではありません。AIが生成する問題・解説・図・採点は**誤りを含むことがあります**。重要な学習では必ず元の教材・一次資料で確認してください。
 
@@ -39,10 +39,10 @@ AI利用料金は**従量課金**で、**すべて利用者自身の Anthropic �
 ### A. リンクで使う（ホスティング・推奨）
 https で配信すると、リンクを開くだけで使え、**ホーム画面への追加（PWA）も有効**になります。
 GitHub Pages を使う場合：リポジトリの **Settings → Pages** で `main` ブランチを公開 → `https://<ユーザー名>.github.io/AIQuiz-app/ai_quiz_app_v5.html` で開けます。
-> ⚠️ 単一HTMLではありません。デプロイ時は `ai_quiz_app_v5.html` と一緒に **`js/` と `vendor/` フォルダも必ずコミット／アップロード**してください。これらが無いとページは読み込めません（`js/app.js` が 404 になります）。
+> ⚠️ 単一HTMLではありません。**全ファイルを同じ階層のまま**（フォルダを作らず）コミット／アップロードしてください。`app.js`・`grading.js`・`questions.js`・`pdf.min.js`・`pdf.worker.min.js` が同じ場所に無いとページは読み込めません（404）。
 
 ### B. ローカルファイルで使う
-`ai_quiz_app_v5.html` を、同じフォルダにある `js/`・`vendor/` ごとブラウザで開きます。一部ブラウザでは `file://` だとAPIがブロックされることがあるため、同梱の起動スクリプトで `http://localhost` 経由を推奨します。
+`ai_quiz_app_v5.html` を、同じフォルダにある `.js` と `pdf.*` ごとブラウザで開きます。一部ブラウザでは `file://` だとAPIがブロックされることがあるため、同梱の起動スクリプトで `http://localhost` 経由を推奨します。
 - **Windows**：`起動.bat` をダブルクリック（`server.ps1` を使ったローカルサーバ）
 - **Mac / Linux**：`起動.bat` をターミナルから実行、または `.command` にリネーム
 
@@ -66,22 +66,22 @@ GitHub Pages を使う場合：リポジトリの **Settings → Pages** で `ma
 ビルド不要の素のフロントエンドです。ファイル構成：
 
 ```
-ai_quiz_app_v5.html   HTML＋CSS（KaTeX はインライン同梱）。js/・vendor/ を読み込む
-js/grading.js         採点コア（純粋関数・DOM非依存）。ブラウザとNodeで共用する二重公開モジュール
-js/questions.js       問題正規化・破綻/ネタバレ検査・出典照合（純粋中心・DOM非依存）
-js/app.js             アプリ本体のロジック
-vendor/pdf.min.js     pdf.js（Apache-2.0・同梱）
-vendor/pdf.worker.min.js
-test/grading.test.js  採点コアの単体テスト（Node標準 node:test・依存ゼロ）
-test/questions.test.js 問題正規化・検査の単体テスト
+ai_quiz_app_v5.html   HTML＋CSS（KaTeX はインライン同梱）。同じ階層の .js を読み込む
+grading.js            採点コア（純粋関数・DOM非依存）。ブラウザとNodeで共用する二重公開モジュール
+questions.js          問題正規化・破綻/ネタバレ検査・出典照合（純粋中心・DOM非依存）
+app.js                アプリ本体のロジック
+pdf.min.js            pdf.js（Apache-2.0・同梱）
+pdf.worker.min.js
+grading.test.js       採点コアの単体テスト（Node標準 node:test・依存ゼロ）
+questions.test.js     問題正規化・検査の単体テスト
 package.json          テスト／構文チェック用スクリプト
 ```
 
-採点ロジック（表記ゆれ正規化・数式同値判定・記述採点）は `js/grading.js`、問題JSONの正規化・破綻検査・出典照合は `js/questions.js` に切り出してあり、単体テスト（計42ケース）で守っています。Node があれば：
+採点ロジック（表記ゆれ正規化・数式同値判定・記述採点）は `grading.js`、問題JSONの正規化・破綻検査・出典照合は `questions.js` に切り出してあり、単体テスト（計42ケース）で守っています。Node があれば：
 
 ```
 npm test        # 採点コアの単体テスト（node --test test/）
-npm run check   # js/*.js（grading/questions/app）の構文チェック
+npm run check   # grading/questions/app の構文チェック
 ```
 
 ---
@@ -90,7 +90,7 @@ npm run check   # js/*.js（grading/questions/app）の構文チェック
 
 本体は **MIT License**（[`LICENSE`](LICENSE)）で公開しています。
 
-同梱・利用しているサードパーティ製ソフトウェアの帰属・ライセンスは [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) を参照してください（KaTeX = MIT／そのフォント = SIL OFL 1.1／pdf.js = Apache 2.0・`vendor/` に同梱）。
+同梱・利用しているサードパーティ製ソフトウェアの帰属・ライセンスは [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) を参照してください（KaTeX = MIT／そのフォント = SIL OFL 1.1／pdf.js = Apache 2.0・同梱）。
 
 開発の詳細・設計は [`開発引継ぎ資料.md`](開発引継ぎ資料.md) にまとめています。
 
