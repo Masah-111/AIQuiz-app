@@ -27,7 +27,88 @@ const MAX_UPLOAD_MB = 28;   // 1リクエストの合計アップロード上限
 function resetRunState() {
   currentQ = 0; correctCount = 0; wrongCount = 0; history = [];
   answered = false; activeMathInput = null;
+  resetGradeCost(); // 採点コストの累計を新しいクイズ/試験ぶんに戻す
 }
+
+// ─── 共通ダイアログ（ネイティブ alert/confirm をアプリのUIに統一） ──────────
+// Promise ベース：uiAlert(...) は閉じたら resolve、uiConfirm(...) は true/false を resolve。
+// 見た目は既存の .modal-overlay / .modal-box / .notice-foot を流用。呼び出し側は
+//   await uiConfirm('…', { okText:'実行', cancelText:'やめる' })
+// のように使う（alert は await 不要。ただしリロード/遷移の直前だけ await する）。
+let _dlgResolve = null;
+function _ensureDialogEl() {
+  let ov = document.getElementById('app-dialog');
+  if (ov) return ov;
+  ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'app-dialog';
+  ov.innerHTML =
+    '<div class="modal-box" style="width:min(440px,100%);">' +
+      '<div class="modal-head"><div><div class="modal-title" id="app-dialog-title"></div></div></div>' +
+      '<div class="notice-body" style="padding:18px 22px;"><p id="app-dialog-msg" style="margin:0; white-space:pre-wrap; line-height:1.7;"></p></div>' +
+      '<div class="notice-foot" id="app-dialog-foot" style="justify-content:flex-end;"></div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  return ov;
+}
+function _closeDialog(result) {
+  const ov = document.getElementById('app-dialog');
+  if (ov) ov.classList.remove('show');
+  try { syncBodyScrollLock(); } catch (e) {}
+  const r = _dlgResolve; _dlgResolve = null;
+  if (r) r(result);
+}
+function _openDialog(opts) {
+  return new Promise(resolve => {
+    // 直前のダイアログが残っていたら、その約束を（安全側で）解決してから開く（多重表示防止）
+    if (_dlgResolve) { const prev = _dlgResolve; _dlgResolve = null; try { prev(opts.type === 'confirm' ? false : undefined); } catch (e) {} }
+    const ov = _ensureDialogEl();
+    ov.querySelector('#app-dialog-title').textContent = opts.title || (opts.type === 'confirm' ? '確認' : 'お知らせ');
+    ov.querySelector('#app-dialog-msg').textContent = opts.message || '';
+    const foot = ov.querySelector('#app-dialog-foot');
+    foot.innerHTML = '';
+    _dlgResolve = resolve;
+    if (opts.type === 'confirm') {
+      const cancel = document.createElement('button');
+      cancel.className = 'btn-secondary'; cancel.style.cssText = 'padding:8px 16px;';
+      cancel.textContent = opts.cancelText || 'キャンセル';
+      cancel.onclick = () => _closeDialog(false);
+      foot.appendChild(cancel);
+    }
+    const ok = document.createElement('button');
+    ok.className = 'btn-primary'; ok.style.cssText = 'padding:8px 16px;';
+    ok.textContent = opts.okText || 'OK';
+    ok.onclick = () => _closeDialog(opts.type === 'confirm' ? true : undefined);
+    foot.appendChild(ok);
+    // オーバーレイ外クリック：alert は閉じる／confirm は誤操作防止で閉じない
+    ov.onclick = ev => { if (ev.target === ov && opts.type !== 'confirm') _closeDialog(undefined); };
+    requestAnimationFrame(() => {
+      ov.classList.add('show');
+      try { syncBodyScrollLock(); } catch (e) {}
+      try { ok.focus(); } catch (e) {}
+    });
+  });
+}
+// Esc / Enter のキー操作（Esc=confirmはキャンセル・alertは閉じる／Enter=OK）
+document.addEventListener('keydown', e => {
+  if (!_dlgResolve) return;
+  const ov = document.getElementById('app-dialog');
+  if (!ov || !ov.classList.contains('show')) return;
+  if (e.key === 'Escape') {
+    const isConfirm = !!ov.querySelector('#app-dialog-foot .btn-secondary');
+    _closeDialog(isConfirm ? false : undefined);
+  } else if (e.key === 'Enter') {
+    const isConfirm = !!ov.querySelector('#app-dialog-foot .btn-secondary');
+    _closeDialog(isConfirm ? true : undefined);
+  }
+});
+function uiAlert(message, opts) { return _openDialog(Object.assign({ type: 'alert', message: message }, opts || {})); }
+function uiConfirm(message, opts) { return _openDialog(Object.assign({ type: 'confirm', message: message }, opts || {})); }
+
+// ネイティブ alert をアプリ内モーダルへ置き換える（既存の多数の alert(...) 呼び出しをそのまま活かす）。
+// 非ブロッキングなので「表示後すぐ return」する用途はそのままで安全。ページ再読み込み等の直前だけ
+// 例外的に await uiAlert(...) を使う。confirm は同期APIのため置換できず、呼び出し側を await uiConfirm(...) に変更している。
+try { window.alert = function (m) { return uiAlert(m); }; } catch (e) {}
 
 // ─── FILE UPLOAD ───────────────────────────────────────────────
 const fileInput = document.getElementById('file-input');
@@ -152,7 +233,7 @@ async function startQuiz() {
     catch (e) { console.error(e); }
   }
 
-  if (!preGenerateGuard(storedSettings, { confirmCost: true })) return;
+  if (!(await preGenerateGuard(storedSettings, { confirmCost: true }))) return;
 
   currentDifficulty = storedSettings.difficulty;
   resetRunState();
@@ -197,7 +278,8 @@ function estimateCostLabel(mb, qn) {
 }
 
 // 生成前の安全チェック：二重実行防止・サイズ上限・コスト確認。実行してよければ true。
-function preGenerateGuard(settings, opts) {
+// コスト確認ダイアログが非同期（uiConfirm）になったため async。呼び出し側は await すること。
+async function preGenerateGuard(settings, opts) {
   opts = opts || {};
   if (isGenerating) return false; // 既に生成中なら無視（二重課金防止）
   // 問題プールをバックグラウンド作成中は、別の有料生成を走らせない（同時課金・処理交錯の防止）。
@@ -215,16 +297,18 @@ function preGenerateGuard(settings, opts) {
       return false;
     }
     // コスト確認：初回、または大きめの教材/多めの出題のときに確認
+    // Gemini（無料枠）キー時は「Anthropicに課金」の確認は出さない（誤案内になるため）
     const qn = settings.qCount;
     const big = mb >= 5 || qn >= 12;
-    if (opts.confirmCost && (genCount === 0 || big)) {
+    if (opts.confirmCost && !isGeminiKey(settings.apiKey) && (genCount === 0 || big)) {
       const est = estimateCostLabel(mb, qn);
-      const ok = confirm(
+      const ok = await uiConfirm(
         'AIに問題生成をリクエストします（有料）。\n\n' +
         '・教材：' + (mb > 0 ? mb.toFixed(1) + 'MB のファイル' : 'テキストのみ') + '\n' +
         '・出題数：' + qn + '問\n' +
         '・概算コスト：' + est + '\n\n' +
-        'あなたのAnthropicアカウントに課金されます。実行しますか？'
+        'あなたのAnthropicアカウントに課金されます。実行しますか？',
+        { okText: '生成する', cancelText: 'やめる' }
       );
       if (!ok) return false;
     }
@@ -243,6 +327,13 @@ function setStartBtnBusy(busy) {
 const PREFERRED_MODEL = 'claude-sonnet-5'; // 既定モデル。新モデルに乗り換えるときはここを変更
 let activeModel = PREFERRED_MODEL;           // 実際に使うモデル（廃止時は自動で切り替わる）
 let modelChecked = false;                    // このセッションで確認済みか
+
+// ─── プロバイダ判定（最小プロトタイプ：キーの接頭辞で自動振り分け） ──────────────
+// Anthropic のキーは "sk-ant-…"、Google(Gemini) のキーは "AIza…"。
+// キー欄に AIza… を貼るだけで Gemini 経路に切り替わる（UI追加なしで試せる）。
+// 正式なプロバイダ選択UIは、品質確認後（設計B）で導入する。
+const GEMINI_MODEL = 'gemini-2.5-flash'; // Gemini の既定モデル（無料枠あり）。変更可
+function isGeminiKey(k) { return /^AIza/.test((k || '').trim()); }
 
 // Models APIで利用可能モデルを確認し、既定が廃止されていれば自動で現行モデルに切り替える
 async function resolveActiveModel(apiKey, force) {
@@ -305,6 +396,27 @@ async function testConnection() {
   const btn = document.getElementById('test-conn-btn');
   if (btn) btn.disabled = true;
   setConnStatus('接続テスト中…', 'info');
+  // Gemini キー（AIza…）なら Gemini の疎通確認（最小プロトタイプ）
+  if (isGeminiKey(key)) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }) });
+      if (resp.ok) {
+        setConnStatus('✓ 接続OK（Gemini：' + GEMINI_MODEL + '）。このキーで問題を生成できます。', 'ok');
+        setTimeout(collapseApiKey, 1200);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        const m = (err.error && err.error.message) || ('HTTP ' + resp.status);
+        setConnStatus('✗ Geminiエラー：' + m, 'err');
+      }
+    } catch (e) {
+      setConnStatus('✗ 接続できませんでした（' + (e.message || e) + '）。file:// やキーのリファラ制限が原因のことがあります。', 'err');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+    return;
+  }
   try {
     await resolveActiveModel(key, true); // 既定モデルの生存確認＋必要なら自動切替
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -371,6 +483,7 @@ function fileToBase64(file) {
 // 出題生成の入口：実行環境に応じてウィジェット用／API用に振り分ける
 async function generateQuestions(settings, similarTo, filesArg, opts) {
   if (IS_WIDGET) return generateQuestionsWidget(settings, similarTo);
+  if (isGeminiKey(settings.apiKey)) return generateQuestionsGemini(settings, similarTo, filesArg, opts); // 最小プロトタイプ
   return generateQuestionsAPI(settings, similarTo, filesArg, opts);
 }
 
@@ -666,6 +779,61 @@ async function generateQuestionsAPI(settings, similarTo, filesArg, opts) {
   return parseQuestionJSON(text);
 }
 
+// ── Gemini（Google Generative Language API）モード：最小プロトタイプ ──────────────
+// 目的は「PDF/画像→問題JSON」が Gemini でも通るか＋生成品質の確認。system/指示/JSON整形は
+// Claude 経路と全く同じもの（buildSystemPrompt / buildInstruction / parseQuestionJSON）を再利用する。
+// 非ストリーミング（プロンプトは有限で応答も短め）。採点系（記述/同値/描画）はまだ Claude 前提のため、
+// Gemini キー時は resp.ok=false でキーワード採点にフォールバックする（プロトタイプの割り切り）。
+async function generateQuestionsGemini(settings, similarTo, filesArg, opts) {
+  opts = opts || {};
+  const fileContents = await readFiles(filesArg || uploadedFiles);
+  // 教材（PDF/画像）は inlineData（base64）で渡す。Claude の document/image と同じ base64 をそのまま使う。
+  const parts = fileContents.map(f => ({ inlineData: { mimeType: f.mediaType, data: f.data } }));
+
+  const fileListText = fileContents.map((f, i) => `${i}: ${f.name}`).join('\n');
+  const sourceDesc =
+    (fileContents.length
+      ? `アップロードした教材ファイル一覧（"source"の"file"にはこの番号を使うこと）：\n${fileListText}\n`
+      : '') +
+    (settings.materialText ? `\n教材テキスト：\n${settings.materialText}\n` : '') +
+    '\n上記の教材から問題を生成してください。';
+  parts.push({ text: buildInstruction(settings, similarTo, sourceDesc) });
+
+  // responseMimeType:'application/json' で「JSONだけ」を強制（Claudeよりも素直にJSONが返る）。
+  const maxOutputTokens = Math.min(32000, 4000 + (settings.qCount || 5) * 800);
+  const body = {
+    systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', maxOutputTokens }
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
+  let resp;
+  try {
+    resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch (e) {
+    throw new Error('Gemini APIに接続できませんでした（' + (e && e.message ? e.message : e) + '）。file:// で開いた場合やキー制限（HTTPリファラ）が原因のことがあります。ローカルサーバー経由で開くか、キー制限を確認してください。');
+  }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    const m = (err.error && err.error.message) || ('HTTP ' + resp.status);
+    throw new Error('Geminiエラー：' + m);
+  }
+  const data = await resp.json();
+
+  // 安全フィルタ等でブロックされた場合の分かりやすいエラー
+  const cand = data.candidates && data.candidates[0];
+  if (!cand) {
+    const br = data.promptFeedback && data.promptFeedback.blockReason;
+    throw new Error(br ? ('Geminiが応答をブロックしました（' + br + '）。教材内容を見直してください。') : 'Geminiの応答が空でした。もう一度お試しください。');
+  }
+  const text = ((cand.content && cand.content.parts) || []).map(p => p.text || '').join('');
+  // 実測トークン（無料枠のため金額は出さず、目安として件数のみコンソールに出す）
+  const u = data.usageMetadata || {};
+  console.log(`[AIQuiz] Gemini生成 (${GEMINI_MODEL})  入力 ${u.promptTokenCount || 0} / 出力 ${u.candidatesTokenCount || 0} / 合計 ${u.totalTokenCount || 0} tok`);
+  return parseQuestionJSON(text);
+}
+
 // Anthropic Messages API のSSEストリームを読み取り、本文テキスト(text_delta)を結合して返す。
 // 思考ブロック(thinking_delta / signature_delta)は本文に含めず、進捗表示にだけ使う。
 async function readAnthropicStream(resp) {
@@ -726,9 +894,9 @@ async function readAnthropicStream(resp) {
   return text;
 }
 
-// 生成1回の実測トークンから概算コストを算出し、コンソールに出す（推定でなく実額を把握するため）。
-// 直近の値は window.__lastUsage にも保存する。
-function logGenerationCost(usage) {
+// 実測トークンから概算コスト（USD/JPY）を計算し、共通の形に整える。生成・採点の両方で使う。
+// 戻り値：{ model, usage:{input_tokens,cache_creation_input_tokens,cache_read_input_tokens,output_tokens}, usd, jpy }
+function computeUsageCost(usage) {
   // per 1M tokens（USD）：in=入力, out=出力, cw=キャッシュ書込, cr=キャッシュ読込
   const PRICES = {
     'claude-sonnet-4-6': { in: 3, out: 15, cw: 3.75, cr: 0.30 },
@@ -743,38 +911,78 @@ function logGenerationCost(usage) {
   if (model === 'claude-sonnet-5' && Date.now() < Date.parse('2026-09-01T00:00:00Z')) {
     p = { in: 2, out: 10, cw: 2.5, cr: 0.20 };
   }
-  const inTok = usage.input_tokens || 0;
-  const cwTok = usage.cache_creation_input_tokens || 0;
-  const crTok = usage.cache_read_input_tokens || 0;
-  const outTok = usage.output_tokens || 0;
+  const inTok = (usage && usage.input_tokens) || 0;
+  const cwTok = (usage && usage.cache_creation_input_tokens) || 0;
+  const crTok = (usage && usage.cache_read_input_tokens) || 0;
+  const outTok = (usage && usage.output_tokens) || 0;
   const usd = (inTok * p.in + cwTok * p.cw + crTok * p.cr + outTok * p.out) / 1e6;
-  const jpy = usd * 155; // 円換算は概算レート
-  window.__lastUsage = {
+  return {
     model,
     usage: { input_tokens: inTok, cache_creation_input_tokens: cwTok, cache_read_input_tokens: crTok, output_tokens: outTok },
-    usd, jpy
+    usd, jpy: usd * 155 // 円換算は概算レート
   };
+}
+
+// 生成1回の実測トークンから概算コストを算出し、コンソール＋トーストに出す（推定でなく実額を把握するため）。
+// 直近の値は window.__lastUsage にも保存する。
+function logGenerationCost(usage) {
+  const c = computeUsageCost(usage);
+  const t = c.usage;
+  window.__lastUsage = c;
   console.log(
-    `[AIQuiz] 生成コスト実測 (${model})\n` +
-    `  入力(非キャッシュ): ${inTok} tok\n` +
-    `  キャッシュ 書込:${cwTok} / 読込:${crTok} tok\n` +
-    `  出力(思考+JSON): ${outTok} tok\n` +
-    `  概算コスト: $${usd.toFixed(4)}  (≈¥${jpy.toFixed(1)})`
+    `[AIQuiz] 生成コスト実測 (${c.model})\n` +
+    `  入力(非キャッシュ): ${t.input_tokens} tok\n` +
+    `  キャッシュ 書込:${t.cache_creation_input_tokens} / 読込:${t.cache_read_input_tokens} tok\n` +
+    `  出力(思考+JSON): ${t.output_tokens} tok\n` +
+    `  概算コスト: $${c.usd.toFixed(4)}  (≈¥${c.jpy.toFixed(1)})`
   );
   // アプリ内トーストにも表示（PC/スマホでコンソールを見なくても分かるように）。実データのみ。
-  if ((inTok + cwTok + crTok + outTok) > 0) { try { showCostToast(window.__lastUsage); } catch (e) {} }
+  if ((t.input_tokens + t.cache_creation_input_tokens + t.cache_read_input_tokens + t.output_tokens) > 0) {
+    sessionCost.genUsd += c.usd; sessionCost.genJpy += c.jpy; sessionCost.genCalls++;
+    try { showCostToast(c); } catch (e) {}
+  }
+}
+
+// このセッション（ページ読み込み〜）の生成＋採点コストの累計。データ管理ハブで一覧表示する。
+// リロードでリセット（＝Anthropicの請求総額ではなく「この画面を開いてからの目安」）。
+let sessionCost = { genUsd: 0, genJpy: 0, genCalls: 0, gradeUsd: 0, gradeJpy: 0, gradeCalls: 0 };
+
+// ── 採点系API（記述採点・AI同値判定・描画採点）の実測コスト ──
+// 生成とは別枠で累計し、コンソール＋トーストに出す。1回のクイズ／試験ぶんを resetRunState でリセットする。
+// ウィジェット（window.claude.complete）は usage を返さないので加算されない（トークン0で早期return）。
+let gradeCost = { usd: 0, jpy: 0, calls: 0, usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 }, model: '' };
+function resetGradeCost() {
+  gradeCost = { usd: 0, jpy: 0, calls: 0, usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 }, model: '' };
+}
+function logGradingCost(usage) {
+  const c = computeUsageCost(usage);
+  const t = c.usage;
+  const tokens = t.input_tokens + t.cache_creation_input_tokens + t.cache_read_input_tokens + t.output_tokens;
+  if (tokens <= 0) return; // usage が取れない環境では累計しない
+  gradeCost.calls++;
+  gradeCost.usd += c.usd; gradeCost.jpy += c.jpy; gradeCost.model = c.model;
+  for (const k in gradeCost.usage) gradeCost.usage[k] += t[k] || 0;
+  sessionCost.gradeUsd += c.usd; sessionCost.gradeJpy += c.jpy; sessionCost.gradeCalls++;
+  window.__lastGradeCost = { call: c, totalUsd: gradeCost.usd, totalJpy: gradeCost.jpy, calls: gradeCost.calls };
+  console.log(`[AIQuiz] 採点コスト実測 (${c.model}) 今回 $${c.usd.toFixed(4)}（≈¥${c.jpy.toFixed(1)}） ／ 累計 ${gradeCost.calls}回 $${gradeCost.usd.toFixed(4)}（≈¥${gradeCost.jpy.toFixed(1)}）`);
+  try {
+    showCostToast({ model: gradeCost.model, usage: gradeCost.usage, usd: gradeCost.usd, jpy: gradeCost.jpy }, { label: '🧮 採点コスト', calls: gradeCost.calls });
+  } catch (e) {}
 }
 
 // ── 生成コストのアプリ内トースト（standalone/APIモードのみ。logGenerationCost から呼ぶ）──
 let costToastTimer = null;
-function showCostToast(u) {
+function showCostToast(u, opts) {
   if (!u) return;
+  opts = opts || {};
   const el = document.getElementById('cost-toast');
   if (!el) return;
   const main = document.getElementById('cost-toast-main');
   const detail = document.getElementById('cost-toast-detail');
   const t = u.usage || {};
-  if (main) main.textContent = `💴 生成コスト ¥${u.jpy.toFixed(1)}（$${u.usd.toFixed(4)}・実測）　▸明細`;
+  const label = opts.label || '💴 生成コスト';
+  const callsNote = opts.calls ? `（${opts.calls}回）` : '';
+  if (main) main.textContent = `${label}${callsNote} ¥${u.jpy.toFixed(1)}（$${u.usd.toFixed(4)}・実測）　▸明細`;
   if (detail) {
     detail.textContent = `入力(非キャッシュ) ${t.input_tokens || 0} ／ キャッシュ 書込 ${t.cache_creation_input_tokens || 0}・読込 ${t.cache_read_input_tokens || 0} ／ 出力(思考+JSON) ${t.output_tokens || 0} tok　(${u.model})`;
     detail.style.display = 'none';
@@ -1083,6 +1291,56 @@ function mathToHtml(text) {
 // 要素に「数式入りテキスト」を安全に設定する（textContent の代わり。HTMLはエスケープ）
 function setMath(el, text) {
   if (el) el.innerHTML = mathToHtml(text);
+}
+
+// ─── 答えの値（正解・選択肢など）を「表示だけ」数式として整形する ───────────
+// 採点は素テキストのまま（answerMatches は不変）。ここは表示専用で、値を触らない。
+// AIが tan^{-1}(b/a) や x^2, sqrt(2), π/3 のようなキャレット/スラッシュ記法を
+// 値として返したとき、生テキストのまま出ると読みにくいので KaTeX で整形する。
+// 「いかにも式」のときだけ整形し、70年 / 9/11 のような非数式・日付は素のまま出す（誤検出回避）。
+// 変換・描画に失敗したら必ず生テキストにフォールバックする。
+function plainToLatex(s) {
+  let t = String(s);
+  t = t.replace(/\bsqrt\s*\(([^()]*)\)/g, '\\sqrt{$1}');                 // sqrt(x) → \sqrt{x}
+  // 関数名を \付きに（すでに \ が付いている・語の一部は除外）
+  t = t.replace(/(^|[^\\A-Za-z])(sin|cos|tan|sec|csc|cot|log|ln|exp|lim|arg|det|max|min)(?![A-Za-z])/g, '$1\\$2');
+  const GREEK = { 'α':'\\alpha','β':'\\beta','γ':'\\gamma','δ':'\\delta','ε':'\\epsilon','ζ':'\\zeta','η':'\\eta','θ':'\\theta','ι':'\\iota','κ':'\\kappa','λ':'\\lambda','μ':'\\mu','ν':'\\nu','ξ':'\\xi','π':'\\pi','ρ':'\\rho','σ':'\\sigma','τ':'\\tau','υ':'\\upsilon','φ':'\\phi','χ':'\\chi','ψ':'\\psi','ω':'\\omega','Δ':'\\Delta','Σ':'\\Sigma','Ω':'\\Omega','Φ':'\\Phi','Θ':'\\Theta','Π':'\\Pi','Γ':'\\Gamma','Λ':'\\Lambda' };
+  t = t.replace(/[αβγδεζηθικλμνξπρστυφχψωΔΣΩΦΘΠΓΛ]/g, c => GREEK[c] || c);
+  t = t.replace(/×/g, '\\times ').replace(/÷/g, '\\div ').replace(/·/g, '\\cdot ')
+       .replace(/≤/g, '\\le ').replace(/≥/g, '\\ge ').replace(/≠/g, '\\ne ')
+       .replace(/±/g, '\\pm ').replace(/→/g, '\\to ').replace(/∞/g, '\\infty ').replace(/√/g, '\\sqrt ');
+  // 分数 A/B → \frac{A}{B}（1レベルのみ：英数・\コマンド・( ) グループを A,B とみなす）
+  const frac = /(\\?[A-Za-z0-9{}]+|\([^()]*\))\s*\/\s*(\\?[A-Za-z0-9{}]+|\([^()]*\))/g;
+  t = t.replace(frac, (m, a, b) => {
+    const strip = x => x.replace(/^\((.*)\)$/, '$1');
+    return '\\frac{' + strip(a) + '}{' + strip(b) + '}';
+  });
+  return t;
+}
+function mathifyValue(v) {
+  const s = (v == null) ? '' : String(v);
+  if (!s) return '';
+  if (s.indexOf('$') !== -1) return mathToHtml(s);        // 明示的な $...$ は既存処理に任せる
+  if (typeof katex === 'undefined') return escapeHtml(s);
+  // 数式の合図（指数・添字・\・関数名・ギリシャ・記号）が無ければ素テキスト＝日付や「70年」を壊さない
+  const mathish = /[\^_\\]|\b(sqrt|sin|cos|tan|sec|csc|cot|log|ln|exp|lim|arg|det)\b|[αβγδεζηθικλμνξπρστυφχψωΔΣΩΦΘΠΓΛ√∞∑∫±≤≥≠→×÷·]/.test(s);
+  if (!mathish) return escapeHtml(s);
+  try { return katex.renderToString(plainToLatex(s), { throwOnError: true, displayMode: false }); }
+  catch (e) { return escapeHtml(s); }                     // 変換/描画に失敗したら生テキスト
+}
+// レビュー画面などの「正解」表示用：値ごとに mathifyValue で整形し、区切りは素の文字で連結する
+// （区切りを含めて数式化すると a/b の / が分数化されて壊れるため、必ず値単位で整形する）。
+function formatAnswerHtml(q) {
+  switch (q.type) {
+    case 'sort':  return (q.items || []).map((it, j) => mathifyValue(it) + '→' + mathifyValue(q.categories[q.answer[j]] ?? '?')).join('、');
+    case 'order': return (q.items || []).map(mathifyValue).join(' → ');
+    case 'fill':  return (q.blanks || []).map(mathifyValue).join(' / ');
+    case 'table': return (q.blanks || []).map(b => (q.rows[b.r] && q.rows[b.r][b.c]) ?? '').filter(v => v !== '').map(mathifyValue).join(' / ');
+    case 'text':  return mathifyValue(q.model_answer || '（記述）');
+    case 'draw':  return mathifyValue(q.model_answer || '（描画）');
+    case 'graph': return escapeHtml((q.points || []).map(p => `(${p[0]}, ${p[1]})`).join(q.mode === 'polyline' ? ' → ' : '、'));
+    default:      return mathifyValue(q.choices[q.correct]);
+  }
 }
 
 // 穴埋め用：問題文を「数式($...$)／非数式」に分解しながら、空欄(___)を置換する（表示テキスト用）。
@@ -1652,6 +1910,7 @@ async function gradeDrawAnswer(q, dataUrl) {
   });
   if (!resp.ok) throw new Error('AI request failed (' + resp.status + ')');
   const data = await resp.json();
+  try { logGradingCost(data.usage); } catch (e) {} // 描画採点の実測課金を累計・表示
   const text = data.content.map(b => b.text || '').join('');
   const clean = (text || '').replace(/```json|```/g, '').trim();
   let g = null;
@@ -1817,7 +2076,7 @@ function showQuizQuestion() {
       q.choices.forEach((c, i) => {
         const btn = document.createElement('button');
         btn.className = 'choice-btn';
-        btn.innerHTML = `<span class="choice-label">${LABELS[i]}</span><span>${mathToHtml(c)}</span>`;
+        btn.innerHTML = `<span class="choice-label">${LABELS[i]}</span><span>${mathifyValue(c)}</span>`;
         btn.onclick = () => selectAnswer(i, btn);
         choicesDiv.appendChild(btn);
       });
@@ -2234,6 +2493,7 @@ async function aiCheckEquivalence(q, pairs) {
     });
     if (!resp.ok) throw new Error('AI request failed');
     const data = await resp.json();
+    try { logGradingCost(data.usage); } catch (e) {} // 同値判定の実測課金を累計・表示
     text = data.content.map(b => b.text || '').join('');
   }
   const clean = (text || '').replace(/```json|```/g, '').trim();
@@ -2249,7 +2509,7 @@ function addWrongNote(input, correctValue, type) {
   const note = document.createElement(type === 'fill' ? 'span' : 'div');
   note.className = type === 'fill' ? 'fill-correct-note' : 'table-correct';
   note.style.color = 'var(--red)';
-  note.textContent = '正解：' + (correctValue ?? '');
+  note.innerHTML = '正解：' + mathifyValue(correctValue ?? ''); // 値は表示のみ数式整形（採点は不変）
   input.after(note);
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -2579,6 +2839,7 @@ async function gradeTextAnswer(q, userAnswer) {
     });
     if (!resp.ok) return keywordGrade(q, userAnswer);
     const data = await resp.json();
+    try { logGradingCost(data.usage); } catch (e) {} // 採点の実測課金を累計・表示
     text = data.content.map(b => b.text || '').join('');
   }
 
@@ -2819,7 +3080,7 @@ function renderExamInput(q, i, body) {
       const lab = document.createElement('label');
       lab.style.cssText = 'display:flex; align-items:flex-start; gap:8px; padding:6px 4px; cursor:pointer; line-height:1.6;';
       const r = document.createElement('input'); r.type = 'radio'; r.name = 'exq-' + i; r.value = j; r.style.marginTop = '3px';
-      const span = document.createElement('span'); span.innerHTML = mathToHtml(ch);
+      const span = document.createElement('span'); span.innerHTML = mathifyValue(ch);
       lab.appendChild(r); lab.appendChild(span); body.appendChild(lab);
     });
   } else if (q.type === 'fill') {
@@ -2974,19 +3235,24 @@ function updateExamTimer() {
   if (remain <= 0) { clearInterval(examTimer); submitExam(true); }
 }
 
-// 採点中のUI（提出ボタンを無効化・「採点中…」表示。AI同値判定に時間がかかるため）
+// 採点中のUI（提出ボタンを無効化・「採点中…」表示。AI同値判定・記述採点に時間がかかるため）
 function setExamGrading(on) {
   const t = document.getElementById('exam-timer');
-  if (t && on) t.textContent = 'AI採点中…';
+  if (t && on) t.textContent = '採点中… 0/' + questions.length;
   document.querySelectorAll('#screen-exam .btn-primary').forEach(b => {
     b.disabled = on; b.textContent = on ? '採点中…' : '採点する（提出）';
   });
+}
+// 一括採点の進捗（何問中何問まで採点したか）をタイマー枠に表示する。逐次採点で待つ間の無反応を防ぐ。
+function updateExamGradeProgress(done) {
+  const t = document.getElementById('exam-timer');
+  if (t) t.textContent = '採点中… ' + done + '/' + questions.length;
 }
 
 // 提出（auto=時間切れ）。全問を一括採点し、既存の結果画面へ。AI同値判定はONかつキー有り時のみ。
 async function submitExam(auto) {
   if (examSubmitted) return;
-  if (!auto && !confirm('採点して結果を表示します。よろしいですか？\n（未回答は不正解になります。提出後は戻れません）')) return;
+  if (!auto && !(await uiConfirm('採点して結果を表示します。よろしいですか？\n（未回答は不正解になります。提出後は戻れません）', { okText: '採点する', cancelText: 'まだ' }))) return;
   examSubmitted = true;
   clearInterval(examTimer);
   setExamGrading(true);
@@ -2994,10 +3260,11 @@ async function submitExam(auto) {
   try {
     for (let i = 0; i < questions.length; i++) {
       const t = questions[i].type;
-      if (t === 'draw' || t === 'graph') { history.push(null); continue; } // 採点対象外＝成績に含めない（不正解扱いにしない）
+      if (t === 'draw' || t === 'graph') { history.push(null); updateExamGradeProgress(i + 1); continue; } // 採点対象外＝成績に含めない（不正解扱いにしない）
       const ok = await gradeExamQuestion(questions[i], i);
       history.push(ok);
       if (ok) correctCount++; else wrongCount++;
+      updateExamGradeProgress(i + 1); // 逐次採点の進捗を更新（記述・同値判定で待つ間の目安）
     }
   } catch (e) {
     // 想定外のエラーで「採点中…」のまま固まらないよう、提出前の状態に戻して再提出できるようにする
@@ -3076,12 +3343,12 @@ async function gradeExamQuestion(q, i) {
   }
 }
 
-function quitExam() {
+async function quitExam() {
   const isDemo = !!storedSettings.isDemo;
   const msg = isDemo
     ? 'お試しの試験を終了して最初の画面に戻ります。よろしいですか？（採点されません）'
     : '試験を中断して最初の画面に戻ります。（採点されません）\n\n回答内容は保存されませんが、「続きから再開」で同じ問題セットの試験をやり直せます。よろしいですか？';
-  if (!confirm(msg)) return;
+  if (!(await uiConfirm(msg, { okText: '中断する', cancelText: '続ける' }))) return;
   clearInterval(examTimer);
   examSubmitted = true;
   examActive = false;
@@ -3133,7 +3400,7 @@ function showResults() {
       <div class="answer-row">
         ${resultTag}
         <span class="tag info">${typeLabel(q)}</span>
-        <span class="tag info">正解：${mathToHtml(formatAnswerText(q))}</span>
+        <span class="tag info">正解：${formatAnswerHtml(q)}</span>
         ${q.topic ? `<span style="font-size:12px; color:var(--text3);">${escapeHtml(q.topic)}</span>` : ''}
         ${q.source ? `<button class="source-btn" onclick="openSourceModal(${i})">出典を見る</button>` : ''}
       </div>
@@ -3351,8 +3618,8 @@ function startSRSReview() {
   startQuizFromQuestions(qs, { answerFormat: 'mixed', difficulty: 'medium', srs: true }, 'srs');
 }
 
-function clearSRS() {
-  if (!confirm('苦手問題の復習リストをすべて削除しますか？（元に戻せません）')) return;
+async function clearSRS() {
+  if (!(await uiConfirm('苦手問題の復習リストをすべて削除しますか？（元に戻せません）', { okText: '削除する', cancelText: 'やめる' }))) return;
   saveSRS([]);
   checkSRS();
 }
@@ -3363,7 +3630,7 @@ async function startSimilarQuiz() {
   if (wrongQs.length === 0) return;
 
   const settings = { ...storedSettings, qCount: Math.min(Math.max(wrongQs.length, 3), 10) };
-  if (!preGenerateGuard(settings, { confirmCost: true })) return;
+  if (!(await preGenerateGuard(settings, { confirmCost: true }))) return;
 
   quizKind = 'similar';
   isGenerating = true;
@@ -3394,7 +3661,7 @@ async function startSimilarQuiz() {
 
 // ─── RETAKE ────────────────────────────────────────────────────
 async function retakeQuiz() {
-  if (!preGenerateGuard(storedSettings, { confirmCost: true })) return;
+  if (!(await preGenerateGuard(storedSettings, { confirmCost: true }))) return;
 
   resetRunState();
   currentDifficulty = storedSettings.difficulty;
@@ -3445,7 +3712,7 @@ const DEMO_QUESTIONS = [
 ];
 
 // 生成を介さず、与えられた問題配列でクイズを開始（保存セット・デモ共通）
-function startQuizFromQuestions(qs, settings, kind) {
+async function startQuizFromQuestions(qs, settings, kind) {
   questions = qs;
   storedSettings = Object.assign({
     qCount: qs.length, difficulty: 'medium', choiceCount: 4, focus: 'balanced',
@@ -3460,13 +3727,17 @@ function startQuizFromQuestions(qs, settings, kind) {
   // 生成ボタン経由のプール出題（maybeHandlePoolFlow/startPoolBuildAndQuiz）は modeConfirmed:true で確認を飛ばす。
   let mode = (document.getElementById('quiz-mode') || {}).value || 'normal';
   if (mode === 'exam' && !storedSettings.modeConfirmed) {
-    if (!confirm('モードが「試験モード」になっています。\n試験モード（制限時間つき・全問一括の採点）で始めますか？\n\n「キャンセル」を選ぶと通常モード（1問ずつ回答）で始めます。')) mode = 'normal';
+    if (!(await uiConfirm('モードが「試験モード」になっています。\n試験モード（制限時間つき・全問一括の採点）で始めますか？\n\n「通常モード」を選ぶと1問ずつ回答する形式で始めます。', { okText: '試験モードで開始', cancelText: '通常モードで開始' }))) mode = 'normal';
   }
   storedSettings.mode = mode;
   storedSettings.examMinutes = parseInt((document.getElementById('exam-minutes') || {}).value) || 30;
   resetRunState();
   currentDifficulty = storedSettings.difficulty;
   quizKind = kind || 'normal';
+  // 中断→再開で図・出典を復元できるよう、現在の元ファイルを一時保存する。
+  // プール出題は直前の restorePoolFiles で uploadedFiles が復元済み＝それを保存する。
+  // 保存セット・デモなど元ファイルが無い場合は persistResumeFiles 側が保存キーを消す（＝出典なしとして正しい挙動）。
+  await persistResumeFiles();
   enterQuiz(); // モード（通常/試験）に応じて出題を開始
 }
 
@@ -3477,12 +3748,12 @@ function startDemo() {
 }
 
 // クイズを中断してアップロード画面に戻る（途中経過は保存しない）
-function quitQuiz() {
+async function quitQuiz() {
   const isDemo = !!storedSettings.isDemo;
   const msg = isDemo
     ? 'お試しモードを終了して最初の画面に戻ります。よろしいですか？'
     : 'クイズを中断して最初の画面に戻ります。\n\n進行状況は保存され、後で「続きから再開」できます。よろしいですか？';
-  if (!confirm(msg)) return;
+  if (!(await uiConfirm(msg, { okText: '中断する', cancelText: '続ける' }))) return;
   // デモは再開対象にしないので破棄。通常クイズは自動保存済みの状態を残して再開可能にする。
   if (isDemo) clearQuizState();
   document.getElementById('global-stats-bar').classList.remove('visible');
@@ -3547,7 +3818,7 @@ async function importPoolFile(poolExport) {
     await poolSaveGuarded(rec);
     refreshPoolUI();
     const n = (rec.questions && rec.questions.length) || 0;
-    if (confirm(`問題プール「${rec.name}」（${n}問）を復元しました。\n\n今すぐこのプールから出題しますか？（「キャンセル」で一覧に戻ります）`)) {
+    if (await uiConfirm(`問題プール「${rec.name}」（${n}問）を復元しました。\n\n今すぐこのプールから出題しますか？`, { okText: '出題する', cancelText: '一覧に戻る' })) {
       await serveFromPool(rec);
     }
   } catch (e) {
@@ -3898,10 +4169,10 @@ async function maybeHandlePoolFlow(settings) {
 
   // 2回目以降：このファイルの無料プールがある → プールから出題を提案
   if (existing && existing.questions && existing.questions.length) {
-    const ok = confirm(
+    const ok = await uiConfirm(
       `このファイルの問題プール「${existing.name}」があります（全${existing.questions.length}問${existing.status === 'building' ? '・作成中' : ''}）。\n\n` +
-      'APIを使わず無料でプールから出題しますか？\n\n' +
-      '「キャンセル」を選ぶと、AIで新しく生成します（有料）。'
+      'APIを使わず、このプールから無料で出題できます。',
+      { okText: '無料で出題', cancelText: 'AIで新しく生成（有料）' }
     );
     // 生成ボタンから来た＝モード選択は画面で確認済みなので、試験モードの再確認は不要
     if (ok) { await serveFromPool(existing, Object.assign({}, settings, { modeConfirmed: true })); return true; }
@@ -3912,12 +4183,12 @@ async function maybeHandlePoolFlow(settings) {
   const pages = await countUploadedPdfPages();
   if (pages > POOL_PAGE_THRESHOLD) {
     if (!settings.apiKey) return false; // キーが無ければ通常フロー側のエラー表示に任せる
-    const ok = confirm(
+    const ok = await uiConfirm(
       `このPDFは${pages}ページと大きめです。\n\n` +
       `初回だけAIで「問題プール（目標 約${POOL_TARGET}問）」をまとめて作成し、以降はAPIを使わず無料でくり返し出題できるようにしますか？\n\n` +
       '・作成はバックグラウンドで進みます（最初のまとまりができ次第クイズを開始）。\n' +
-      '・複数回のAI生成を行うため、単発生成より費用がかかります。\n\n' +
-      `「キャンセル」を選ぶと、今回だけの通常生成（${settings.qCount}問）になります。`
+      '・複数回のAI生成を行うため、単発生成より費用がかかります。',
+      { okText: 'プールを作成', cancelText: `今回だけ生成（${settings.qCount}問）` }
     );
     if (ok) { await startPoolBuildAndQuiz(settings); return true; }
   }
@@ -3947,7 +4218,7 @@ async function poolGenerateOneBatch(pool, settings, files, batchIndex) {
 // 初回：最初のバッチを作ってすぐ出題を開始し、残りはバックグラウンドで作り続ける
 async function startPoolBuildAndQuiz(settings) {
   if (poolBuildActive) { alert('問題プールを作成中です。完了までお待ちください。'); return; }
-  if (!preGenerateGuard(settings, { confirmCost: false })) return; // サイズ・二重実行チェック
+  if (!(await preGenerateGuard(settings, { confirmCost: false }))) return; // サイズ・二重実行チェック
 
   const fp = await currentFilesFingerprint();
   const filesSnapshot = uploadedFiles.slice(); // 作成中にファイルが変わっても固定
@@ -4139,7 +4410,7 @@ async function renamePool(id) {
   refreshPoolUI();
 }
 async function deletePool(id) {
-  if (!confirm('この問題プールを削除しますか？（元に戻せません）')) return;
+  if (!(await uiConfirm('この問題プールを削除しますか？（元に戻せません）', { okText: '削除する', cancelText: 'やめる' }))) return;
   await poolDelete(id).catch(() => {});
   refreshPoolUI();
 }
@@ -4197,6 +4468,22 @@ async function refreshDataModal() {
   const ld = document.getElementById('data-learn-status');
   if (ld) ld.textContent = `学習履歴 ${cnt('aiquiz_history')}件 ／ 苦手 ${cnt('aiquiz_srs')}件 ／ 試験 ${cnt('aiquiz_exams')}件`;
 
+  // 今セッションのAI利用コスト（生成＋採点の実測トークンから算出した概算）
+  const costEl = document.getElementById('data-cost-status');
+  if (costEl) {
+    const calls = sessionCost.genCalls + sessionCost.gradeCalls;
+    if (calls === 0) {
+      costEl.textContent = 'この画面を開いてから、AIの生成・採点は行われていません。';
+    } else {
+      const totJpy = sessionCost.genJpy + sessionCost.gradeJpy;
+      const totUsd = sessionCost.genUsd + sessionCost.gradeUsd;
+      costEl.textContent =
+        `生成 ¥${sessionCost.genJpy.toFixed(1)}（${sessionCost.genCalls}回） ／ ` +
+        `採点 ¥${sessionCost.gradeJpy.toFixed(1)}（${sessionCost.gradeCalls}回） ／ ` +
+        `合計 概算 ¥${totJpy.toFixed(1)}（$${totUsd.toFixed(4)}）`;
+    }
+  }
+
   const pools = (await poolList().catch(() => [])).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   const hubList = document.getElementById('data-pool-list');
   if (hubList) hubList.innerHTML = pools.length ? pools.map(poolItemHtml).join('') : '<div style="font-size:12px; color:var(--text3);">まだ問題プールはありません。</div>';
@@ -4213,8 +4500,8 @@ async function refreshDataModal() {
 }
 
 // 保存済みAPIキーを削除
-function deleteApiKey() {
-  if (!confirm('保存したAPIキーをこのブラウザから削除しますか？')) return;
+async function deleteApiKey() {
+  if (!(await uiConfirm('保存したAPIキーをこのブラウザから削除しますか？', { okText: '削除する', cancelText: 'やめる' }))) return;
   try { localStorage.removeItem('aiquiz_api_key'); } catch (e) {}
   const inp = document.getElementById('api-key'); if (inp) inp.value = '';
   try { expandApiKey(); } catch (e) {}
@@ -4298,9 +4585,9 @@ function poolRecordFromExport(p) {
 // バックアップデータ（parse済み）から復元（プール追加＋学習/設定を上書き。キーは触らない）→ 再読み込みで全反映
 async function restoreBackupData(data) {
   if (!data || data.type !== 'backup') {
-    if (!confirm('AIQuizのバックアップ形式として認識できませんでした。それでも復元を試みますか？')) return;
+    if (!(await uiConfirm('AIQuizのバックアップ形式として認識できませんでした。それでも復元を試みますか？', { okText: '試みる', cancelText: 'やめる' }))) return;
   }
-  if (!confirm('バックアップから復元します。\n\n・問題プールを追加します（同じIDは上書き）\n・学習履歴・苦手・試験・設定を上書きします\n・APIキーは含まれないため変更されません\n\n続けますか？')) return;
+  if (!(await uiConfirm('バックアップから復元します。\n\n・問題プールを追加します（同じIDは上書き）\n・学習履歴・苦手・試験・設定を上書きします\n・APIキーは含まれないため変更されません\n\n続けますか？', { okText: '復元する', cancelText: 'やめる' }))) return;
   let poolN = 0;
   try {
     for (const p of (data.pools || [])) {
@@ -4314,7 +4601,7 @@ async function restoreBackupData(data) {
     alert('復元中にエラーが発生しました: ' + (e && e.message ? e.message : e));
     return;
   }
-  alert(`復元しました（問題プール ${poolN}個）。設定を反映するためページを再読み込みします。`);
+  await uiAlert(`復元しました（問題プール ${poolN}個）。設定を反映するためページを再読み込みします。`);
   location.reload();
 }
 
@@ -4418,8 +4705,8 @@ function saveHistoryRecord(rec) {
   } catch (e) { /* localStorage不可の環境では履歴を残さない */ }
 }
 
-function clearHistory() {
-  if (!confirm('学習履歴をすべて削除します。よろしいですか？（元に戻せません）')) return;
+async function clearHistory() {
+  if (!(await uiConfirm('学習履歴をすべて削除します。よろしいですか？（元に戻せません）', { okText: '削除する', cancelText: 'やめる' }))) return;
   try { localStorage.removeItem(HISTORY_KEY); } catch {}
   renderDashboard();
 }

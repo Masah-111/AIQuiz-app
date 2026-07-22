@@ -1710,6 +1710,10 @@
         <button class="btn-secondary" style="padding:6px 12px; font-size:13px;" onclick="closeDataModal(); openDashboard();">学習履歴を見る</button>
       </div>
 
+      <div class="notice-art">今セッションのAI利用コスト（概算）</div>
+      <p style="margin:0 0 4px;" id="data-cost-status">—</p>
+      <p style="font-size:11px; color:var(--text3); margin-top:0;">実際にAIへ送った分の実測トークンから算出した概算です。ページを再読み込みするとリセットされます（Anthropicの請求額とは端数などで差が出ることがあります）。生成中のコストは画面下部にもトースト表示されます。</p>
+
       <div class="notice-art">全体バックアップ（1ファイル・キー除外）</div>
       <p style="margin:0 0 8px;">問題プール（PDF・図・出典込み）・学習履歴・苦手・試験・設定を<b>1つのファイル</b>に書き出し／復元します。別の端末やブラウザへの引っ越しに使えます。<b>APIキーは含まれません。</b></p>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
