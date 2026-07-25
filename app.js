@@ -329,11 +329,38 @@ let activeModel = PREFERRED_MODEL;           // 実際に使うモデル（廃�
 let modelChecked = false;                    // このセッションで確認済みか
 
 // ─── プロバイダ判定（最小プロトタイプ：キーの接頭辞で自動振り分け） ──────────────
-// Anthropic のキーは "sk-ant-…"、Google(Gemini) のキーは "AIza…"。
-// キー欄に AIza… を貼るだけで Gemini 経路に切り替わる（UI追加なしで試せる）。
-// 正式なプロバイダ選択UIは、品質確認後（設計B）で導入する。
-const GEMINI_MODEL = 'gemini-2.5-flash'; // Gemini の既定モデル（無料枠あり）。変更可
-function isGeminiKey(k) { return /^AIza/.test((k || '').trim()); }
+// Anthropic のキーは "sk-ant-…"（sk- で始まる）で安定している。一方 Google(Gemini) のキーは
+// "AIza…" や "AQ.…" など形式が複数あり得るため、接頭辞の列挙では取りこぼす。
+// そこで「sk- で始まらない非空のキー＝Gemini」とみなす（この2プロバイダ構成での堅牢な判定）。
+// 正式なプロバイダ選択UIは、品質確認後（設計B）で導入する予定。
+const GEMINI_MODEL = 'gemini-flash-latest'; // 既定（ローリング別名）。実行時に利用可能モデルへ自動追従
+let geminiModel = GEMINI_MODEL;             // 実際に使う Gemini モデル（resolveGeminiModel で解決）
+let geminiModelChecked = false;             // このセッションで確認済みか
+function isGeminiKey(k) { k = (k || '').trim(); return !!k && !/^sk-/i.test(k); }
+
+// Gemini の利用可能モデルを問い合わせ、generateContent 対応の Flash 系を自動選択する。
+// モデル名は時々廃止される（例：gemini-2.5-flash が新規ユーザー不可に）ため、名前を決め打ちせず
+// ListModels から実在するものを選ぶ（Anthropic の resolveActiveModel と同じ方針）。セッション中1回。
+async function resolveGeminiModel(apiKey, force) {
+  if (geminiModelChecked && !force) return geminiModel;
+  try {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(apiKey));
+    if (resp.ok) {
+      const data = await resp.json();
+      const names = (data.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => (m.name || '').replace(/^models\//, ''));
+      const pick =
+        names.find(n => /flash/i.test(n) && /latest/i.test(n)) ||                       // ローリング別名の flash
+        names.find(n => /flash/i.test(n) && !/lite|preview|exp|thinking/i.test(n)) ||   // 安定版 flash
+        names.find(n => /flash/i.test(n)) ||                                            // 何かしらの flash
+        names.find(n => /gemini/i.test(n)) ||                                           // gemini 系
+        names[0];
+      if (pick) { geminiModel = pick; geminiModelChecked = true; console.log('[AIQuiz] Geminiモデル自動選択:', geminiModel); }
+    }
+  } catch (e) { /* 取得できなくても既定(geminiModel)で続行 */ }
+  return geminiModel;
+}
 
 // Models APIで利用可能モデルを確認し、既定が廃止されていれば自動で現行モデルに切り替える
 async function resolveActiveModel(apiKey, force) {
@@ -396,14 +423,15 @@ async function testConnection() {
   const btn = document.getElementById('test-conn-btn');
   if (btn) btn.disabled = true;
   setConnStatus('接続テスト中…', 'info');
-  // Gemini キー（AIza…）なら Gemini の疎通確認（最小プロトタイプ）
+  // Gemini キー（sk- 以外）なら Gemini の疎通確認（最小プロトタイプ）
   if (isGeminiKey(key)) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+      await resolveGeminiModel(key, true); // 利用可能モデルへ自動追従（廃止モデル回避）
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(key)}`;
       const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }) });
       if (resp.ok) {
-        setConnStatus('✓ 接続OK（Gemini：' + GEMINI_MODEL + '）。このキーで問題を生成できます。', 'ok');
+        setConnStatus('✓ 接続OK（Gemini：' + geminiModel + '）。このキーで問題を生成できます。', 'ok');
         setTimeout(collapseApiKey, 1200);
       } else {
         const err = await resp.json().catch(() => ({}));
@@ -717,7 +745,7 @@ async function generateQuestionsAPI(settings, similarTo, filesArg, opts) {
   }
 
   if (!settings.apiKey) {
-    throw new Error('この環境ではアーティファクト内蔵AIが使えないため、Anthropic APIキーが必要です。アップロード画面の「APIキー」欄に入力してください（sk-ant-… で始まるキー）。');
+    throw new Error('AIを呼び出すには、APIキーが必要です。アップロード画面の「APIキー」欄に、Claude（sk-ant-… で始まるキー）または Google Gemini（無料枠あり）のキーを入力してください。キー欄に貼ると自動で判別されます。');
   }
 
   await resolveActiveModel(settings.apiKey); // 廃止モデルなら自動で現行へ追従
@@ -800,14 +828,17 @@ async function generateQuestionsGemini(settings, similarTo, filesArg, opts) {
   parts.push({ text: buildInstruction(settings, similarTo, sourceDesc) });
 
   // responseMimeType:'application/json' で「JSONだけ」を強制（Claudeよりも素直にJSONが返る）。
-  const maxOutputTokens = Math.min(32000, 4000 + (settings.qCount || 5) * 800);
+  // 2.5系は思考トークンを大量に使うため、出力上限は「思考＋JSON」が両方収まるよう大きめに取る
+  // （thinkingConfig は一部モデルが400を返すので触らない）。
+  const maxOutputTokens = Math.min(65536, 8000 + (settings.qCount || 5) * 1500);
   const body = {
     systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
     contents: [{ role: 'user', parts }],
     generationConfig: { responseMimeType: 'application/json', maxOutputTokens }
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
+  await resolveGeminiModel(settings.apiKey); // 廃止モデル回避：利用可能モデルへ自動追従
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
   let resp;
   try {
     resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -828,10 +859,55 @@ async function generateQuestionsGemini(settings, similarTo, filesArg, opts) {
     throw new Error(br ? ('Geminiが応答をブロックしました（' + br + '）。教材内容を見直してください。') : 'Geminiの応答が空でした。もう一度お試しください。');
   }
   const text = ((cand.content && cand.content.parts) || []).map(p => p.text || '').join('');
+  if (!text.trim()) {
+    const fr = cand.finishReason || '不明';
+    throw new Error('Geminiが空の応答を返しました（finishReason: ' + fr + '）。出力が上限で途切れた可能性があります。問題数を減らすか、再度お試しください。');
+  }
   // 実測トークン（無料枠のため金額は出さず、目安として件数のみコンソールに出す）
   const u = data.usageMetadata || {};
-  console.log(`[AIQuiz] Gemini生成 (${GEMINI_MODEL})  入力 ${u.promptTokenCount || 0} / 出力 ${u.candidatesTokenCount || 0} / 合計 ${u.totalTokenCount || 0} tok`);
+  console.log(`[AIQuiz] Gemini生成 (${geminiModel})  入力 ${u.promptTokenCount || 0} / 出力 ${u.candidatesTokenCount || 0} / 合計 ${u.totalTokenCount || 0} tok`);
   return parseQuestionJSON(text);
+}
+
+// ── 採点系の単発補完（プロバイダ共通）────────────────────────────────
+// 記述採点・AI同値判定・描画採点で使う。key で Claude(sk-ant-)／Gemini(AIza) を自動振り分け。
+// 非ストリーミングで応答テキストを返す。opts.imageB64 があれば画像も添付（描画採点）。
+// opts.jsonOut=true で Gemini は JSON 強制。失敗時は throw（呼び出し側がフォールバックを判断）。
+// コストは Anthropic のみ実額計上（logGradingCost）、Gemini は無料枠のため件数のみコンソールに出す。
+async function aiGradeComplete(opts) {
+  const apiKey = opts.apiKey, maxTokens = opts.maxTokens || 400;
+  if (isGeminiKey(apiKey)) {
+    const parts = [];
+    if (opts.imageB64) parts.push({ inlineData: { mimeType: 'image/png', data: opts.imageB64 } });
+    parts.push({ text: opts.userText });
+    // 2.5系は思考が出力枠を食うため、小さな採点JSONでも余裕を持たせる（最低2048）。thinkingConfigは触らない（400回避）。
+    const gen = { maxOutputTokens: Math.max(2048, maxTokens) };
+    if (opts.jsonOut) gen.responseMimeType = 'application/json';
+    const body = { systemInstruction: { parts: [{ text: opts.system }] }, contents: [{ role: 'user', parts }], generationConfig: gen };
+    await resolveGeminiModel(apiKey); // 廃止モデル回避：利用可能モデルへ自動追従（セッション中1回）
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error('Gemini採点エラー (' + resp.status + ')');
+    const data = await resp.json();
+    const u = data.usageMetadata || {};
+    console.log(`[AIQuiz] Gemini採点 (${geminiModel}) 入力 ${u.promptTokenCount || 0} / 出力 ${u.candidatesTokenCount || 0} tok`);
+    const cand = data.candidates && data.candidates[0];
+    return ((cand && cand.content && cand.content.parts) || []).map(p => p.text || '').join('');
+  }
+  // Anthropic
+  await resolveActiveModel(apiKey);
+  const content = opts.imageB64
+    ? [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: opts.imageB64 } }, { type: 'text', text: opts.userText }]
+    : opts.userText;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model: activeModel, max_tokens: maxTokens, system: opts.system, messages: [{ role: 'user', content }] })
+  });
+  if (!resp.ok) throw new Error('AI request failed (' + resp.status + ')');
+  const data = await resp.json();
+  try { logGradingCost(data.usage); } catch (e) {}
+  return data.content.map(b => b.text || '').join('');
 }
 
 // Anthropic Messages API のSSEストリームを読み取り、本文テキスト(text_delta)を結合して返す。
@@ -1902,16 +1978,7 @@ async function gradeDrawAnswer(q, dataUrl) {
   const b64 = (dataUrl || '').split(',')[1] || '';
   const sys = `あなたは公正な採点者です。学習者が手描きした画像を見て、問題の要求と模範解答（採点基準）に照らして採点してください。手描きのブレは大目に見て、要点（形状・特徴・通る点・ラベルなど）が押さえられているかを重視します。必ず次のJSONのみで返答（他の文章は不要）：{"score":0から100の整数,"verdict":"correct"または"partial"または"incorrect","feedback":"短い講評(1〜2文,日本語)"}`;
   const userText = `【問題】${q.question}\n【模範解答(描くべき図の説明)】${q.model_answer || '（なし）'}\n【押さえるべき要素】${(q.keywords && q.keywords.length) ? q.keywords.join(' / ') : '（指定なし）'}\n\n添付の手描き画像を採点してください。`;
-  await resolveActiveModel(storedSettings.apiKey);
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': storedSettings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: activeModel, max_tokens: 400, system: sys, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } }, { type: 'text', text: userText }] }] })
-  });
-  if (!resp.ok) throw new Error('AI request failed (' + resp.status + ')');
-  const data = await resp.json();
-  try { logGradingCost(data.usage); } catch (e) {} // 描画採点の実測課金を累計・表示
-  const text = data.content.map(b => b.text || '').join('');
+  const text = await aiGradeComplete({ apiKey: storedSettings.apiKey, system: sys, userText: userText, imageB64: b64, maxTokens: 400, jsonOut: true });
   const clean = (text || '').replace(/```json|```/g, '').trim();
   let g = null;
   try { g = JSON.parse(clean); } catch { const mm = clean.match(/\{[\s\S]*\}/); if (mm) { try { g = JSON.parse(mm[0]); } catch (e) {} } }
@@ -2475,26 +2542,7 @@ async function aiCheckEquivalence(q, pairs) {
   if (IS_WIDGET) {
     text = await window.claude.complete(sys + '\n\n' + user);
   } else {
-    await resolveActiveModel(storedSettings.apiKey);
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': storedSettings.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: activeModel,
-        max_tokens: 100,
-        system: sys,
-        messages: [{ role: 'user', content: user }]
-      })
-    });
-    if (!resp.ok) throw new Error('AI request failed');
-    const data = await resp.json();
-    try { logGradingCost(data.usage); } catch (e) {} // 同値判定の実測課金を累計・表示
-    text = data.content.map(b => b.text || '').join('');
+    text = await aiGradeComplete({ apiKey: storedSettings.apiKey, system: sys, userText: user, maxTokens: 100, jsonOut: true });
   }
   const clean = (text || '').replace(/```json|```/g, '').trim();
   let arr = null;
@@ -2821,26 +2869,11 @@ async function gradeTextAnswer(q, userAnswer) {
     text = await window.claude.complete(sys + '\n\n' + user);
   } else {
     if (!storedSettings.apiKey) return keywordGrade(q, userAnswer);
-    await resolveActiveModel(storedSettings.apiKey);
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': storedSettings.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: activeModel,
-        max_tokens: 400,
-        system: sys,
-        messages: [{ role: 'user', content: user }]
-      })
-    });
-    if (!resp.ok) return keywordGrade(q, userAnswer);
-    const data = await resp.json();
-    try { logGradingCost(data.usage); } catch (e) {} // 採点の実測課金を累計・表示
-    text = data.content.map(b => b.text || '').join('');
+    try {
+      text = await aiGradeComplete({ apiKey: storedSettings.apiKey, system: sys, userText: user, maxTokens: 400, jsonOut: true });
+    } catch (e) {
+      return keywordGrade(q, userAnswer); // AI採点に失敗したらキーワード採点にフォールバック（無料で続行）
+    }
   }
 
   const clean = (text || '').replace(/```json|```/g, '').trim();
@@ -3954,6 +3987,7 @@ const POOL_TARGET = 60;         // 作成する問題プールの目標問数（
 const POOL_BATCH = 15;          // 1回のAI生成で作る問数（複数回に分けて目標へ到達）
 const POOL_MAX_BATCHES = 12;    // 暴走・課金しすぎ防止：最大バッチ数
 let poolBuildActive = false;    // プール作成が進行中か（二重起動防止）
+let geminiPoolNoticeShown = false; // Gemini時にプール非提案の案内を出したか（セッション中1回だけ）
 let poolToastTimer = null;
 
 // ── IndexedDB（POOL_STORE）への読み書き ──
@@ -4183,6 +4217,15 @@ async function maybeHandlePoolFlow(settings) {
   const pages = await countUploadedPdfPages();
   if (pages > POOL_PAGE_THRESHOLD) {
     if (!settings.apiKey) return false; // キーが無ければ通常フロー側のエラー表示に任せる
+    // Gemini（無料枠）はプール作成＝短時間に多数のAI呼び出しで、レート上限（例：20回/分）に即当たる。
+    // よってプール作成は提案せず、通常生成（単発）で進める。案内はセッション中1回だけ出す。
+    if (isGeminiKey(settings.apiKey)) {
+      if (!geminiPoolNoticeShown) {
+        geminiPoolNoticeShown = true;
+        await uiAlert(`大きめのPDF（${pages}ページ）ですが、Gemini（無料枠）では「問題プール」（連続生成）は回数上限に当たるため作成しません。\n\n今回は通常生成（${settings.qCount}問）で進めます。\n同じ教材で何度も無料出題したい場合は、Claude（sk-ant-…）のキーをお使いください。`);
+      }
+      return false; // 通常生成へ
+    }
     const ok = await uiConfirm(
       `このPDFは${pages}ページと大きめです。\n\n` +
       `初回だけAIで「問題プール（目標 約${POOL_TARGET}問）」をまとめて作成し、以降はAPIを使わず無料でくり返し出題できるようにしますか？\n\n` +
@@ -4218,6 +4261,9 @@ async function poolGenerateOneBatch(pool, settings, files, batchIndex) {
 // 初回：最初のバッチを作ってすぐ出題を開始し、残りはバックグラウンドで作り続ける
 async function startPoolBuildAndQuiz(settings) {
   if (poolBuildActive) { alert('問題プールを作成中です。完了までお待ちください。'); return; }
+  // 防御：Gemini（無料枠）はプール作成（連続生成）で即レート上限に当たるため、ここでは作らない。
+  // 通常は maybeHandlePoolFlow 側で提案しないので到達しないが、別経路からの誤呼び出しに備える。
+  if (isGeminiKey(settings.apiKey)) { await uiAlert('Gemini（無料枠）では、問題プールの作成（連続生成）は回数上限に当たるため行えません。通常の生成をご利用ください。'); return; }
   if (!(await preGenerateGuard(settings, { confirmCost: false }))) return; // サイズ・二重実行チェック
 
   const fp = await currentFilesFingerprint();

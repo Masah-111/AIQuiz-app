@@ -1055,11 +1055,15 @@
         <div class="guide-step">
           <div class="guide-num">2</div>
           <div class="guide-step-body">
-            <div class="gs-title">APIキーを取得する</div>
+            <div class="gs-title">APIキーを取得する（Gemini か Claude、どちらか1つでOK）</div>
             <div class="gs-sub">
+              本アプリは <b>2種類のAI</b> のどちらでも動きます。<b>どちらか一方</b>のキーを用意してください（両方は不要）。キー欄に貼ると<b>自動で判別</b>されます。<br><br>
+              <b>① Google Gemini（無料で始められる・まず試すならこちら）</b><br>
+              <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a> にGoogleアカウントでログイン →「Get API key（APIキーを作成）」でキーを発行。<span class="imp">クレジットカードの登録は不要で、無料枠で使えます。</span>ただし1分・1日あたりの回数に上限があり、連続生成（下記の「問題プール」）は上限に当たりやすいので避けてください。また無料枠では、送信した教材がGoogleのAI改善に使われることがあります（重要な内容は入れないでください）。<br><br>
+              <b>② Anthropic Claude（有料・品質重視）</b><br>
               <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a> に登録 →
               <a href="https://console.anthropic.com/settings/billing" target="_blank">Billing</a> でクレジット購入（カード/デビット）→
-              「Create Key」で <code>sk-ant-…</code> のキーを発行。<span class="imp">キーは発行直後に1度しか表示されません。</span>
+              「Create Key」で <code>sk-ant-…</code> のキーを発行。<span class="imp">キーは発行直後に1度しか表示されません。</span>従量課金ですが、送信内容がAIの学習に使われることはありません。
             </div>
           </div>
         </div>
@@ -1078,15 +1082,18 @@
           </div>
         </div>
         <div class="guide-note">
-          APIキーはこのファイルには保存されず、お使いのブラウザ内（localStorage）にのみ残ります。<span class="imp">利用料金はあなた自身のAnthropicアカウントに課金されます。共有PCでは入力しないでください。</span>
+          APIキーはこのファイルには保存されず、お使いのブラウザ内（localStorage）にのみ残ります。<span class="imp">Claude（Anthropic）を使う場合、利用料金はあなた自身のAnthropicアカウントに課金されます。Gemini（Google）の無料枠は料金がかかりませんが、入力した教材がGoogleのAI改善に使われることがあります（詳しくはヘッダーの「利用上の注意」）。共有PCではキーを入力しないでください。</span>
         </div>
         <div class="guide-info">
           <div class="gi-title">料金の目安</div>
-          <div class="gi-body">1回の生成で <code>claude-sonnet-5</code> を使用します。教材PDF＋数問の出題で <b>1回あたり おおよそ数円〜十数円</b>程度（PDFのページ数・問題数で変動）。<span class="imp">$5チャージしておけば、個人の勉強用途なら相当な回数使えます。</span></div>
+          <div class="gi-body">
+            <b>Gemini（Google）を使う場合：料金はかかりません（無料枠）。</b>ただし1分・1日あたりの回数上限があり、上限に達すると一時的に生成できません。<br>
+            <b>Claude（Anthropic）を使う場合：</b>1回の生成で <code>claude-sonnet-5</code> を使用し、教材PDF＋数問の出題で <b>1回あたり おおよそ数円〜十数円</b>程度（PDFのページ数・問題数で変動）。<span class="imp">$5チャージしておけば、個人の勉強用途なら相当な回数使えます。</span>
+          </div>
         </div>
         <div class="guide-info">
-          <div class="gi-title">支払い方法</div>
-          <div class="gi-body">クレジットカード／デビットカード（Visa・Mastercard・Amex、Stripe経由）が基本です。<span class="imp">コンビニ・振込・キャリア決済は非対応。</span>最終確認は <a href="https://console.anthropic.com/settings/billing" target="_blank">Billing画面</a> でご確認ください。</div>
+          <div class="gi-title">支払い方法（Claude を使う場合のみ）</div>
+          <div class="gi-body">クレジットカード／デビットカード（Visa・Mastercard・Amex、Stripe経由）が基本です。<span class="imp">コンビニ・振込・キャリア決済は非対応。</span>最終確認は <a href="https://console.anthropic.com/settings/billing" target="_blank">Billing画面</a> でご確認ください。<b>Gemini（Google）の無料枠なら、支払い設定は不要です。</b></div>
         </div>
       </div>
     </details>
@@ -1098,10 +1105,10 @@
       </div>
       <div id="api-key-body">
       <label>APIキー（直接接続モード用）</label>
-      <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-..."
+      <input id="api-key" type="password" autocomplete="off" placeholder="Claude（sk-ant-…）または Gemini のキー"
         style="width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; font-family:inherit; outline:none;">
       <div style="font-size:11px; color:var(--text3); margin-top:8px; line-height:1.6;">
-        ※ キーはこのブラウザ内（localStorage）にのみ保存され、Anthropicへの直接通信のみに使われます。<span class="imp">共有PCでは入力しないでください。</span><a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--blue);">キーの取得はこちら</a>
+        ※ Claude（<code>sk-ant-…</code>）または Gemini のキーを貼ると、<b>自動で判別</b>して使います（両方は不要）。キーはこのブラウザ内（localStorage）にのみ保存され、選んだAI（Anthropic または Google）への直接通信のみに使われます。<span class="imp">共有PCでは入力しないでください。</span>キーの取得：<a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--blue);">Gemini（無料）</a> ／ <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--blue);">Claude（有料）</a>
       </div>
       <div style="display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
         <button type="button" class="btn-secondary" id="test-conn-btn" onclick="testConnection()" style="padding:8px 16px; font-size:13px;">接続テスト</button>
@@ -1487,16 +1494,16 @@
       <p>本ツールの利用には、AIの呼び出しに用いるAnthropicアカウントを、利用者自身が適法に保有していることを要します。利用者は、Anthropicが定める年齢要件（<span class="imp">原則として満18歳以上であること</span>）その他の利用資格を満たさなければなりません。未成年者が本ツールを利用する場合は、<span class="imp">必ず保護者の同意および監督のもとで利用するもの</span>とし、当該同意の取得その他の責任は利用者および保護者が負うものとします。</p>
 
       <div class="notice-art"><span class="art-no">第4条</span>動作環境とAPIキー</div>
-      <p>本ツールはWebブラウザ上で動作し、AIの呼び出しに<b>利用者自身のAnthropic APIキー</b>を使用します。APIキーは<b>お使いのブラウザ内（localStorage）にのみ保存</b>され、Anthropicへの直接通信を除き、本ツールの外部には送信されません。<span class="imp">APIキーの管理および不正利用の防止は、利用者の責任で行ってください。</span>共有・公共のPCでの入力は避けてください。</p>
+      <p>本ツールはWebブラウザ上で動作し、AIの呼び出しに<b>利用者自身のAPIキー</b>を使用します。対応するAIは <b>Anthropic Claude（有料）</b> と <b>Google Gemini（無料枠あり）</b> の2種類で、利用者は<b>いずれか一方</b>のキーを用います（キー欄に貼ると自動的に判別されます）。APIキーは<b>お使いのブラウザ内（localStorage）にのみ保存</b>され、当該AI提供元（Anthropic または Google）への直接通信を除き、本ツールの外部には送信されません。<span class="imp">APIキーの管理および不正利用の防止は、利用者の責任で行ってください。</span>共有・公共のPCでの入力は避けてください。</p>
 
       <div class="notice-art"><span class="art-no">第5条</span>料金の基準と負担</div>
-      <p>本ツールのAI利用料金は<b>従量課金</b>であり、<span class="imp">すべて利用者自身の負担</span>となります（利用者のAnthropicアカウントに課金されます）。</p>
+      <p>本ツールのAI利用料金は、利用者が用いるAIによって異なり、<span class="imp">いずれもすべて利用者自身の負担・責任</span>となります。</p>
       <ul>
-        <li>目安：1回の問題生成あたり、おおよそ数円〜十数円。教材のサイズ・ページ数・問題数により変動します。</li>
-        <li>追加コスト：記述式の「AI採点」は1問ごとに追加のAI呼び出しが発生します。また穴埋め・表穴埋めで入力が正解と文字列一致しなかった場合、別解（同値）かどうかを確認するための追加のAI呼び出しが発生することがあります。図・表の実画像切り出しに伴う画像送信も料金に影響します。</li>
-        <li>使用モデル：既定は <code>claude-sonnet-5</code>。廃止された場合は現行モデルへ自動的に切り替わります。利用可能モデルの確認は無償の範囲で行われます。</li>
+        <li><b>Anthropic Claude（有料）</b>：<b>従量課金</b>で、利用者のAnthropicアカウントに課金されます。目安は1回の問題生成あたり おおよそ数円〜十数円（教材のサイズ・ページ数・問題数により変動）。既定モデルは <code>claude-sonnet-5</code>（廃止された場合は現行モデルへ自動的に切り替わります）。</li>
+        <li><b>Google Gemini（無料枠あり）</b>：クレジットカード登録なしの<b>無料枠</b>で利用できます。ただし1分・1日あたりの<b>回数上限（レート制限）</b>があり、上限に達すると一時的に生成できません（時間をおくと回復します）。連続してAIを呼び出す「問題プール」の作成は無料枠の上限に当たりやすいため、Gemini利用時は行わないでください。無料枠を超える利用や上限の緩和には、Google側での課金設定が必要になる場合があります。使用モデルは実行時に利用可能なものを自動選択します。</li>
+        <li>追加コスト（両者共通）：記述式の「AI採点」は1問ごとに追加のAI呼び出しが発生します。また穴埋め・表穴埋めで入力が正解と文字列一致しなかった場合、別解（同値）かどうかを確認するための追加のAI呼び出しが発生することがあります。図・表の実画像切り出しに伴う画像送信も対象です。</li>
       </ul>
-      <p>正確な料金・残高は、各自の <a href="https://console.anthropic.com/settings/billing" target="_blank">Anthropic Console（Billing）</a> でご確認ください。</p>
+      <p>正確な料金・残高・利用状況は、各自の提供元コンソール（<a href="https://console.anthropic.com/settings/billing" target="_blank">Anthropic Console（Billing）</a> ／ <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>）でご確認ください。</p>
 
       <div class="notice-art"><span class="art-no">第6条</span>コスト・安全管理の仕組み</div>
       <p>意図しない高額化や事故を防ぐため、本ツールは次の仕組みを備えています。</p>
@@ -1533,10 +1540,11 @@
       </ul>
 
       <div class="notice-art"><span class="art-no">第10条</span>データの取り扱い</div>
-      <p>アップロードされた教材・テキストは、問題生成のため<b>AnthropicのAPIへ送信</b>され処理されます。本ツールは独自のサーバーを持たず、利用者のデータを収集・保存・第三者提供しません（APIキーはブラウザ内 localStorage にのみ保存）。送信先での取り扱いは、Anthropicのプライバシーポリシーに従います。</p>
+      <p>アップロードされた教材・テキストは、問題の生成および採点のため、<b>利用者が選んだAI提供元（Anthropic または Google）のAPIへ送信</b>され処理されます。本ツールは独自のサーバーを持たず、利用者のデータを収集・保存・第三者提供しません（APIキーはブラウザ内 localStorage にのみ保存）。送信先での取り扱いは、当該提供元のプライバシーポリシーに従います。</p>
+      <div class="notice-callout"><span class="imp">重要（Gemini の無料枠を利用する場合）：</span>Google Gemini の<b>無料枠</b>では、送信した内容（教材・入力）が、<b>GoogleのサービスやAIモデルの改善のために利用される場合があります。</b>他人に知られたくない内容や機密の内容は、無料枠では送信しないでください。なお、Googleの<b>有料枠</b>では原則としてこうした学習利用は行われず、<b>Anthropic Claude</b> のAPIでも、送信内容が既定でモデルの学習に使われることはありません。各提供元の詳しい取り扱いは、第14条のプライバシーポリシーをご確認ください。</div>
 
       <div class="notice-art"><span class="art-no">第11条</span>アップロードしてはならない情報</div>
-      <p>アップロードされた教材・テキストは、第10条に定めるとおりAnthropicのAPIへ送信され処理されます。利用者は、次に掲げる情報を含む教材等を本ツールにアップロードしてはなりません。</p>
+      <p>アップロードされた教材・テキストは、第10条に定めるとおり、利用者が選んだAI提供元（Anthropic または Google）のAPIへ送信され処理されます。利用者は、次に掲げる情報を含む教材等を本ツールにアップロードしてはなりません。</p>
       <ul>
         <li>本人または第三者の個人情報・連絡先・成績・顔写真その他の個人を識別し得る情報</li>
         <li>守秘義務を負う情報、業務上の機密情報、未公開の試験問題その他の秘密情報</li>
@@ -1548,15 +1556,14 @@
       <p>教材のアップロードは、利用者の責任で行ってください。<span class="imp">第三者の著作物を、私的利用の範囲を超えて使用しないでください。</span>本ツールの利用に起因する著作権その他の権利侵害について、制作者は責任を負いません。</p>
 
       <div class="notice-art"><span class="art-no">第13条</span>知的財産権・本ツールおよび生成物の再配布</div>
-      <p>1. 本ツールにより生成された問題・解説・図表等（以下「生成物」といいます）の利用および取り扱いは、利用者自身の責任において行うものとします。生成物に関する権利関係はAnthropicの規約に従うものとし、その正確性・適法性、および第三者の権利を侵害しないことを、制作者は保証しません。</p>
+      <p>1. 本ツールにより生成された問題・解説・図表等（以下「生成物」といいます）の利用および取り扱いは、利用者自身の責任において行うものとします。生成物に関する権利関係は、利用したAI提供元（Anthropic または Google）の規約に従うものとし、その正確性・適法性、および第三者の権利を侵害しないことを、制作者は保証しません。</p>
       <p>2. 利用者は、本ツール（本HTMLファイル）を第三者へ再配布することができます。なお、APIキーその他の設定はブラウザ内（localStorage）に保存されるため、通常、本HTMLファイル自体にはAPIキーは含まれません。ただし、利用者がファイルを編集してキーを記載した場合等に備え、<span class="imp">再配布の際は、自身のAPIキーその他の個人的なデータがファイルに残っていないことを確認し、取り除いたうえで配布することを強く推奨します。</span>利用者自身のAPIキーを含んだまま配布したことにより生じる不正利用・課金その他の損害について、制作者は一切の責任を負いません。</p>
 
       <div class="notice-art"><span class="art-no">第14条</span>外部サービスへの依存と遵守事項</div>
-      <p>本ツールはAnthropic APIに依存しており、その仕様変更・提供終了等により、予告なく動作しなくなる場合があります。利用にあたっては、Anthropicの各種ポリシーを遵守してください。</p>
+      <p>本ツールは、外部のAI提供元（Anthropic および Google）のAPIに依存しており、その仕様変更・モデルの提供終了・料金や無料枠の変更等により、予告なく動作しなくなる場合があります。利用にあたっては、実際に利用するAI提供元の各種ポリシーを遵守してください。</p>
       <ul>
-        <li><a href="https://www.anthropic.com/legal/aup" target="_blank">利用ポリシー（Usage Policy）</a></li>
-        <li><a href="https://www.anthropic.com/legal/privacy" target="_blank">プライバシーポリシー</a></li>
-        <li><a href="https://www.anthropic.com/legal/commercial-terms" target="_blank">商用利用規約</a></li>
+        <li>Anthropic（Claude）：<a href="https://www.anthropic.com/legal/aup" target="_blank">利用ポリシー（Usage Policy）</a> ／ <a href="https://www.anthropic.com/legal/privacy" target="_blank">プライバシーポリシー</a> ／ <a href="https://www.anthropic.com/legal/commercial-terms" target="_blank">商用利用規約</a></li>
+        <li>Google（Gemini）：<a href="https://ai.google.dev/gemini-api/terms" target="_blank">Gemini API 追加利用規約</a> ／ <a href="https://policies.google.com/privacy" target="_blank">プライバシーポリシー</a></li>
       </ul>
 
       <div class="notice-art"><span class="art-no">第15条</span>本書の変更</div>
@@ -1597,6 +1604,14 @@
     </div>
     <div class="notice-body">
       <p class="notice-lead">本アプリは、教材から学習問題を自動生成し、出題・採点・復習・成績管理までを行う学習ツールです。主な機能とその使い方を以下にまとめます。</p>
+
+      <div class="notice-art"><span class="art-no">AI</span>使うAIとAPIキー（Gemini か Claude）</div>
+      <p>問題の生成・採点にはAIを使います。本アプリは <b>2種類のAI</b> に対応しており、<b>どちらか一方</b>のAPIキーを「APIキー」欄に貼るだけで使えます（キーの種類は<b>自動で判別</b>されます。両方は不要）。キーが無くても、「お試しモード」や保存済みの「問題プール」なら無料で体験できます。</p>
+      <table class="notice-table">
+        <tr><th>Google Gemini</th><td><b>無料枠あり</b>（クレジットカード登録なしで開始可）。<a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a> でキーを発行。まず試すならこちら。<span class="imp">1分・1日あたりの回数上限があり、連続生成する「問題プール」の作成は避けてください。また無料枠では、送信した教材がGoogleのAI改善に使われることがあります（重要な内容は入れないでください）。</span></td></tr>
+        <tr><th>Anthropic Claude</th><td><b>有料（従量課金）・品質重視</b>。<a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a> でキーを発行（要クレジット購入）。<span class="imp">送信内容がAIの学習に使われることはありません。</span></td></tr>
+      </table>
+      <p>料金・データの取り扱いの詳細は、ヘッダーの「利用上の注意」（第5条・第10条・第14条）をご確認ください。</p>
 
       <div class="notice-art"><span class="art-no">1</span>出題形式の種類</div>
       <p>教材の内容に応じて、6種類の形式で出題します。アップロード画面の「回答形式」で、いろいろな形式のミックス、または特定の形式を選べます。</p>
